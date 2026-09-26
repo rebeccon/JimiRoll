@@ -47,6 +47,15 @@ internal sealed class SettingsData
 
     /// <summary>日志语言：<c>zh</c> / <c>en</c>。留空则跟随游戏语言。</summary>
     public string LogLanguage { get; set; } = "";
+
+    /// <summary>
+    /// 是否在「自定义开局」界面挂一个小状态面板（储备数量 / 搜索状态 / 本局种子）。
+    /// 它是纯展示、只新增节点、不动游戏原有 UI；不想看到就设成 false。
+    /// </summary>
+    public bool ShowStatusPanel { get; set; } = true;
+
+    /// <summary>状态面板的字号。</summary>
+    public int PanelFontSize { get; set; } = 22;
 }
 
 /// <summary>
@@ -179,6 +188,9 @@ internal static class Settings
         if (string.IsNullOrWhiteSpace(d.CharacterKey))
         { notes.Add("CharacterKey 为空 → CHARACTER:SILENT"); d.CharacterKey = "CHARACTER:SILENT"; }
 
+        if (d.PanelFontSize < 8 || d.PanelFontSize > 96)
+        { notes.Add($"PanelFontSize={d.PanelFontSize} → 22"); d.PanelFontSize = 22; }
+
         if (notes.Count > 0)
             SeedStore.Log("[设置] 有以下值不合理，已自动纠正：\n  - " + string.Join("\n  - ", notes));
 
@@ -190,6 +202,7 @@ internal static class Settings
     {
         var d = Current;
         return $"储备池={d.ReserveCapacity}; 问号{(d.RequireExactUnknownRooms ? "==" : ">=")}{d.MinUnknownRooms}; " +
-               $"{d.CharacterKey} A{d.Ascension}; 线程={d.WorkerCount}; 单次上限={d.MaxRunMinutes}分钟";
+               $"{d.CharacterKey} A{d.Ascension}; 线程={d.WorkerCount}; 单次上限={d.MaxRunMinutes}分钟; " +
+               $"面板={(d.ShowStatusPanel ? "开" : "关")}";
     }
 }

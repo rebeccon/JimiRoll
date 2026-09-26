@@ -99,10 +99,8 @@ internal static class SeedInputPatch
             }
 
             var t = screen.GetType();
-            var field = AccessTools.Field(t, "_seedInput")
-                        ?? (t.BaseType != null ? AccessTools.Field(t.BaseType, "_seedInput") : null);
-
-            if (field == null)
+            var input = FindSeedInput(t, screen);
+            if (input == null)
             {
                 if (!_warnedField)
                 {
@@ -110,16 +108,6 @@ internal static class SeedInputPatch
                     SeedStore.Log($"[种子框] [{where}] 找不到 _seedInput 字段，跳过（游戏可能改版了）");
                 }
                 return;   // 不设 _everHandled → 下次还能再试
-            }
-
-            if (field.GetValue(screen) is not LineEdit input)
-            {
-                if (!_warnedField)
-                {
-                    _warnedField = true;
-                    SeedStore.Log($"[种子框] [{where}] _seedInput 还不是 LineEdit，跳过");
-                }
-                return;
             }
 
             // 只覆盖「空」或「我们自己上次填的」；其它情况说明是你自己打的，绝不能动
@@ -141,6 +129,9 @@ internal static class SeedInputPatch
                 return;
             }
 
+            // 记下来给状态面板显示（P5）
+            StatusPanel.RememberCurrentSeed(hit);
+
             input.Text = hit.Seed;
             _lastFilled = hit.Seed;
             _everHandled = true;
@@ -157,6 +148,41 @@ internal static class SeedInputPatch
             try { _everHandled = true; _lastHandled = Clock.Elapsed; } catch { }
         }
     }
+
+    /// <summary>
+    /// 拿到种子输入框。先找私有字段 <c>_seedInput</c>（含基类），
+    /// 找不到就退而在子节点里翻一个 <c>LineEdit</c> —— 这样游戏改字段名也不会整个功能失灵。
+    /// </summary>
+    public static LineEdit FindSeedInput(Type t, object screen)
+    {
+        try
+        {
+            var field = AccessTools.Field(t, "_seedInput")
+                        ?? (t.BaseType != null ? AccessTools.Field(t.BaseType, "_seedInput") : null);
+
+            if (field?.GetValue(screen) is LineEdit byField) return byField;
+
+            // 退路：深度遍历找第一个 LineEdit
+            if (screen is Node node) return FindLineEditDeep(node);
+        }
+        catch { /* 找不到就当没有 */ }
+        return null;
+    }
+
+    static LineEdit FindLineEditDeep(Node root)
+    {
+        try
+        {
+            foreach (var child in root.GetChildren())
+            {
+                if (child is LineEdit le) return le;
+                var deep = FindLineEditDeep(child);
+                if (deep != null) return deep;
+            }
+        }
+        catch { }
+        return null;
+    }
 }
 
 /// <summary>
@@ -168,8 +194,13 @@ internal static class SafePatchEntry
 {
     public static void Run(object instance, string where)
     {
+        // ① 填种子（可能取走储备池队首）
         try { SeedInputPatch.Fill(instance, where); }
         catch { /* 吞掉一切，宁可功能不生效也绝不能让游戏出问题 */ }
+
+        // ② 挂状态面板。放在这里而不是 Fill 里面，是为了"储备池为空"时也照样显示面板。
+        try { StatusPanel.Attach(instance); }
+        catch { }
     }
 }
 

@@ -1,6 +1,6 @@
 # 基米roll种器（JimiRoll）
 
-> 为《杀戮尖塔 2》自动筛选固定条件的开局种子 —— 装好即用，不需要任何操作。
+> 也许是最基米的roll种器喵
 
 需要第三方模组 **[RolltheSpire2](https://steamcommunity.com/sharedfiles/filedetails/?id=3755166888)**（作者 FalseOcean）。
 
@@ -36,21 +36,21 @@
 
 ---
 
-## 核心机制：储备池
+## 状态面板
+
+进「自定义开局」界面时，种子框正下方会挂一行小字：
 
 ```
-储备池恒定维持 15 个
-      ↓
-进「自定义开局」→ 取走队首那个（最优先的）
-                → 从储备池删除，归档到 seeds_used.json
-                → 填进种子框
-      ↓
-储备掉到 14 → 回主菜单时自动补搜 → 补满 15 就停手
-      ↓
-储备是满的 15 个 → 完全不搜索，零资源占用
+基米roll种器　储备 14/15　·　搜索中 3.5 M/s　｜　本局 00000004ME1V（问号 14）
 ```
 
-取走的种子**不会丢**，全部归档在 `seeds_used.json`。
+从左到右是：储备还剩几个、搜索在不在跑（跑多快）、这一局用的是哪个种子。
+
+它是**只读的** —— 不点它、不挡操作，也不会动游戏原有的界面。
+搜索是后台跑的，所以数字会自己跳动。
+
+不想看到它就改 `settings.json` 的 `"ShowStatusPanel": false`；
+想临时关掉就建个空文件 `%APPDATA%\SlayTheSpire2\JimiRoll\DISABLE_PANEL.txt`。
 
 ---
 
@@ -65,6 +65,9 @@
 | `seeds_used.json` | 归档：用掉的 + 超上限移出的，只增不删 |
 | `cursor.json` | 扫到哪个位置了（跨会话续扫，不重复） |
 | `JimiRoll.log` | 运行日志 |
+| `settings.json` | 可调参数 |
+
+（取走的种子**不会丢**，全部归档在 `seeds_used.json`。）
 
 ---
 
@@ -85,17 +88,19 @@
 正常启动长这样：
 
 ```
-==================== JimiRoll 启动 ====================
-条件: 涅奥骨骰=RELIC:NEOWS_BONES; 遗物=...; 诅咒=CARD:GUILTY; 第一章问号>=12; ...
-运行模式: 默认自动运行（储备池不满就补搜，满了就空闲待命）
-储备池: 13/15 个（按优先级排序）
-    1.  问号14   000000048UGP
-    ...
-种子哈希: ✓ 自研 XxHash64 与游戏 GetDeterministicHashCode 在 2007 个样本上完全一致
-✓ 自检通过（种子哈希与游戏一致）
-[版本] 探测结果 = "0.111.0"
-RT2 接线状态: ✓ 已就绪
-✓✓ 全部就绪 —— 储备池不满时会自动补搜
+[23:34:25] [INF] ==================== JimiRoll 启动 ====================
+[23:34:25] [INF] [设置] 已加载: ...\settings.json
+[23:34:25] [INF] 设置: 储备池=15; 问号>=12; CHARACTER:SILENT A10; 线程=1; 单次上限=3分钟; 面板=开
+[23:34:25] [INF] 条件: 涅奥骨骰=RELIC:NEOWS_BONES; 遗物=...; 诅咒=CARD:GUILTY; 第一章问号>=12
+[23:34:25] [INF] 运行模式: 默认自动运行（储备池不满就补搜，满了就空闲待命）
+[23:34:25] [INF] 储备池 15/15（队首 00000004ME1V 问号14）｜归档 94
+[23:34:25] [INF] 种子哈希: ✓ 自研 XxHash64 与游戏 GetDeterministicHashCode 在 2007 个样本上完全一致
+[23:34:25] [INF] ✓ 自检通过（种子哈希与游戏一致）
+[23:34:25] [INF] [版本] 探测结果 = "0.111.0"
+[23:34:26] [INF] [authority] BonesEligibleRelics = 28 个  HasExactBonesPools = True
+[23:34:26] [INF] RT2 接线状态: ✓ 已就绪
+[23:34:26] [INF] ✓✓ 全部就绪 —— 储备池不满时会自动补搜
+[23:34:26] [INF] 储备池已满（15/15）→ 不搜索，空闲待命。
 ```
 
 ### 自检失败怎么办
@@ -113,6 +118,14 @@ RT2 接线状态: ✓ 已就绪
 看日志里有没有 `[种子框]` 开头的行，会说明卡在哪一步。
 如果这个功能本身出问题，可以建一个空文件
 `%APPDATA%\SlayTheSpire2\JimiRoll\DISABLE_SEED_PATCH.txt` 单独关掉它。
+
+### 状态面板没出现
+
+看日志里有没有 `[面板]` 开头的行：
+
+- `[面板] 未挂载状态面板：现场没有任何带字体覆盖的 MegaLabel…` → 游戏改版了，
+  界面里找不到可复用的字体，就干脆不挂（**不影响筛种和自动填种子**）。
+- 建个空文件 `%APPDATA%\SlayTheSpire2\JimiRoll\DISABLE_PANEL.txt` 可以主动关掉它。
 
 ---
 
@@ -133,7 +146,9 @@ RT2 接线状态: ✓ 已就绪
   "MaxRunMinutes": 3,             // 单次搜索时间上限
   "WorkerCount": 1,
   "LogLevel": "Info",             // Debug / Info / Warn / Error / Off
-  "LogLanguage": ""               // zh / en；留空则跟随游戏语言
+  "LogLanguage": "",              // zh / en；留空则跟随游戏语言
+  "ShowStatusPanel": true,        // 是否显示「自定义开局」界面上的状态小面板
+  "PanelFontSize": 22             // 面板字号
 }
 ```
 
@@ -219,6 +234,6 @@ dotnet build -c Release -p:SkipDeploy=true   # 只编译
 
 ## 许可证
 
-[MIT](LICENSE) —— 随便用，作者不担责。
+[MIT](LICENSE) —— 随便用喵，作者不担责。
 
 使用本模组造成的任何后果（存档异常、游戏崩溃等）由使用者自行承担。

@@ -7,11 +7,36 @@
 ## [未发布]
 
 ### 计划中
-- P5：游戏内小面板（显示储备数量、复制种子）
 - P6：发布前验证清单 + GitHub
 - i18n：日志消息的中英双语（**基础设施已就位**，见下）
 
 详见 `docs/正式化方案.md`。
+
+---
+
+## [1.1.0] - 2026-09-26
+
+### P5 —— 游戏内状态面板
+- 「自定义开局」界面里，种子输入框正下方挂一行只读小字：
+  `基米roll种器　储备 14/15　·　搜索中 3.5 M/s　｜　本局 00000004ME1V（问号 14）`
+- 每秒自动刷新（搜索是后台线程在跑，数量会自己变）
+- 新增设置项 `ShowStatusPanel`（默认开）与 `PanelFontSize`（默认 22）
+- 新增运行期开关 `DISABLE_PANEL.txt`（建个空文件立刻停用，不用重编译）
+- 新增 `Loc`（极简双语）与 `Loc.Rate`（速率格式化）
+
+**这一版踩到的两个坑（都写进代码注释了）：**
+1. `MegaLabel._Ready()` 第一句是 `MegaLabelHelper.AssertThemeFontOverride`，
+   它在没有字体覆盖时**直接抛 `InvalidOperationException`**。
+   Godot 的 `AddChild` 在父节点已入树时会**同步**调用子节点 `_Ready`，
+   所以裸 `new MegaLabel()` 会**当场把界面打崩**。
+   ⇒ 必须**先** `AddThemeFontOverride`、**再** `AddChild`。
+2. Godot 4.5 的 `Control` 只有 `HasThemeFontOverride`，**没有** `GetThemeFontOverride`。
+   取字体要用 `GetThemeFont(name)` —— 它的查找顺序是「自身 override → Theme → 祖先」，
+   对一个确实持有 override 的控件调用，拿到的就是那个 override。
+
+**安全性设计：** 只新增节点、绝不改动游戏已有节点；面板挂在屏幕本身而不是
+`LineEdit` 的父容器（后者会被 Container 当成"要参与排版的孩子"，可能挤坏原有布局）；
+`MouseFilter = Ignore` 不抢点击；任何一步失败都只记一条日志然后放弃，绝不影响筛种。
 
 ---
 
