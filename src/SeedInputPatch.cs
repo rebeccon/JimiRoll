@@ -152,7 +152,7 @@ internal static class SeedInputPatch
         }
         catch (Exception ex)
         {
-            try { SeedStore.Log("[种子框] 填充失败（已忽略，不影响游戏）: " + ex.GetType().Name + ": " + ex.Message); }
+            try { SeedStore.Warn("[种子框] 填充失败（已忽略，不影响游戏）: " + ex.GetType().Name + ": " + ex.Message); }
             catch { }
             try { _everHandled = true; _lastHandled = Clock.Elapsed; } catch { }
         }

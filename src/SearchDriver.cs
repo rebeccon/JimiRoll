@@ -215,7 +215,7 @@ internal static class SearchDriver
         }
         catch (Exception ex)
         {
-            SeedStore.Log("搜索异常中止: " + ex);
+            SeedStore.Error("搜索异常中止: " + ex);
         }
         finally
         {
@@ -315,12 +315,18 @@ internal static class SearchDriver
         sw.Stop();
 
         var rate = count / Math.Max(sw.Elapsed.TotalSeconds, 1e-9);
-        sb.AppendLine($"扫描 {count:N0} 个种子，耗时 {sw.Elapsed.TotalSeconds:F3}s → {rate:N0} 种子/秒（{rate / 1e6:F2} M/s）");
-        for (var q = GameInterop.UnknownRoomsMin; q <= GameInterop.UnknownRoomsMax; q++)
-            sb.AppendLine($"  问号 {q,2} 个 : {hist[q],10:N0}  ({hist[q] * 100.0 / count,6:F2}%)");
+
+        // Info：只给一行结论
         var pass = 0L;
         for (var q = 0; q < hist.Length; q++) if (Conditions.UnknownRoomsPass(q)) pass += hist[q];
+        sb.AppendLine($"扫描 {count:N0} 个种子，耗时 {sw.Elapsed.TotalSeconds:F3}s → {rate:N0} 种子/秒（{rate / 1e6:F2} M/s）");
         sb.AppendLine($"  第①级通过率 : {pass * 100.0 / count:F2}%");
+
+        // Debug：完整分布（每次启动都打太吵）
+        if (Logger.Level <= LogLevel.Debug)
+            for (var q = GameInterop.UnknownRoomsMin; q <= GameInterop.UnknownRoomsMax; q++)
+                sb.AppendLine($"  问号 {q,2} 个 : {hist[q],10:N0}  ({hist[q] * 100.0 / count,6:F2}%)");
+
         return sb.ToString();
     }
 }

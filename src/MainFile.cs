@@ -83,7 +83,7 @@ public static class MainFile
         }
         catch (Exception ex)
         {
-            SeedStore.Log("整理储备池失败（不影响其它功能）: " + ex.Message);
+            SeedStore.Warn("整理储备池失败（不影响其它功能）: " + ex.Message);
         }
 
         // ---- 1. 自检 ----
@@ -98,7 +98,7 @@ public static class MainFile
 
         if (problems.Count > 0)
         {
-            SeedStore.Log("✗✗✗ 自检失败，为避免给出错误种子，搜索不会启动：");
+            SeedStore.Error("✗✗✗ 自检失败，为避免给出错误种子，搜索不会启动：");
             foreach (var p in problems) SeedStore.Log("  - " + p);
             return false;
         }
@@ -112,7 +112,7 @@ public static class MainFile
         }
         catch (Exception ex)
         {
-            SeedStore.Log("✗ 第①级冒烟测试失败: " + ex);
+            SeedStore.Error("✗ 第①级冒烟测试失败: " + ex);
             return false;
         }
 
@@ -152,7 +152,7 @@ public static class MainFile
             if (!_switchWarned)
             {
                 _switchWarned = true;
-                SeedStore.Log("⚠ 初始化没成功，无法开始搜索。请看上面的诊断。");
+                SeedStore.Warn("⚠ 初始化没成功，无法开始搜索。请看上面的诊断。");
             }
             return;
         }

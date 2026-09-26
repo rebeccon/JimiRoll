@@ -41,31 +41,42 @@ internal static class FoundSeeds
     // 展示
     // ==================================================================
 
-    /// <summary>把整个储备池打进日志（启动时看一眼用）。</summary>
+    /// <summary>
+    /// 汇报储备池。Info 级别只给一行摘要；完整清单在 Debug 级别
+    /// （每次启动刷 15 行太吵，实测是主要噪音来源）。
+    /// </summary>
     public static void LogReserve()
     {
         var all = All;
+
         if (all.Count == 0)
         {
-            SeedStore.Log("储备池: 0 个（需要搜索来补充）");
+            SeedStore.Warn("储备池是空的 —— 等搜索补上。");
             return;
         }
 
         var solid = all.Count(h => h.Evidence != null && h.Evidence.Contains("全中"));
+        var next = all[0];
+
+        // Info：一行摘要
+        SeedStore.Log($"储备池 {all.Count}/{Conditions.ReserveCapacity}（队首 {next.Seed} 问号{next.Act1UnknownRooms}）" +
+                      $"｜归档 {SeedStore.ArchiveCount}｜取走方式：进「自定义开局」自动取队首并填入");
+
+        if (solid < all.Count)
+            SeedStore.Warn($"储备池里有 {all.Count - solid} 条证据不完整（排序已靠后，不会优先被取走）");
+
+        // Debug：完整清单
+        if (Logger.Level > LogLevel.Debug) return;
 
         var sb = new StringBuilder();
-        sb.AppendLine($"储备池: {all.Count}/{Conditions.ReserveCapacity} 个（按优先级排序）");
-        if (solid < all.Count)
-            sb.AppendLine($"  其中 {all.Count - solid} 条证据不完整（旧版本并发 bug 留下的），已排在后面");
-
+        sb.AppendLine($"储备池完整清单（{all.Count}/{Conditions.ReserveCapacity}）:");
         for (var i = 0; i < all.Count; i++)
         {
             var h = all[i];
             var mark = h.Evidence != null && h.Evidence.Contains("全中") ? ' ' : '?';
             sb.AppendLine($"  {i + 1,3}.{mark} 问号{h.Act1UnknownRooms}   {h.Seed}");
         }
-        sb.AppendLine($"  （每次进入自定义开局会取走第 1 个并删除；归档总数 {SeedStore.ArchiveCount}）");
-        SeedStore.Log(sb.ToString());
+        SeedStore.Debug(sb.ToString());
     }
 
     /// <summary>把储备池放进系统剪贴板。</summary>

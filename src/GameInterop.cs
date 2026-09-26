@@ -37,7 +37,6 @@ internal static class GameInterop
     // ★ P3：不再用反射 —— StringHelper.GetDeterministicHashCode 已核实是 public static，
     //   直接调用即可，写错名字会编译不过。
     static ulong _domainHash;
-    static bool _domainHashReady;
 
     public static bool Ready { get { Ensure(); return _ready; } }
     public static string Failure { get { Ensure(); return _failure; } }
@@ -57,7 +56,6 @@ internal static class GameInterop
     {
         // 立刻取一次域名哈希，顺便验证调用可用
         _domainHash = StringHelper.GetDeterministicHashCode(Act1MapDomain);
-        _domainHashReady = true;
     }
 
     // ------------------------------------------------------------------

@@ -361,15 +361,21 @@ internal static class SeedStore
     // 日志
     // ==================================================================
 
-    public static void Log(string message)
-    {
-        var line = $"[{DateTime.Now:HH:mm:ss}] {message}";
-        try
-        {
-            Console.WriteLine("[JimiRoll] " + message);
-            EnsureDir();
-            File.AppendAllText(LogPath, line + Environment.NewLine);
-        }
-        catch { /* 日志失败不该影响搜索 */ }
-    }
+    /// <summary>
+    /// 写日志（Info 级别）。
+    ///
+    /// ★ P4：实际输出交给 <see cref="Logger"/> —— 支持分级、轮转、语言。
+    ///   保留这个方法是为了不惊动已有的 70 多个调用点。
+    ///   需要更高/更低级别时用 <see cref="Warn"/> / <see cref="Error"/> / <see cref="Debug"/>。
+    /// </summary>
+    public static void Log(string message) => Logger.Info(message);
+
+    /// <summary>可恢复的问题（比 Info 更醒目）。</summary>
+    public static void Warn(string message) => Logger.Warn(message);
+
+    /// <summary>出错（功能可能不可用）。</summary>
+    public static void Error(string message) => Logger.Error(message);
+
+    /// <summary>详细诊断（默认不输出，settings.json 里把 LogLevel 调成 Debug 才看得到）。</summary>
+    public static void Debug(string message) => Logger.Debug(message);
 }

@@ -38,6 +38,15 @@ internal sealed class SettingsData
     /// 只会多占游戏的 CPU 和内存带宽。所以默认 1。
     /// </summary>
     public int WorkerCount { get; set; } = 1;
+
+    /// <summary>
+    /// 日志级别：<c>Debug</c> / <c>Info</c> / <c>Warn</c> / <c>Error</c> / <c>Off</c>。
+    /// 排障时调成 Debug 能看到全部细节（储备池全量清单、冒烟测试分布等）。
+    /// </summary>
+    public string LogLevel { get; set; } = "Info";
+
+    /// <summary>日志语言：<c>zh</c> / <c>en</c>。留空则跟随游戏语言。</summary>
+    public string LogLanguage { get; set; } = "";
 }
 
 /// <summary>
@@ -84,6 +93,7 @@ internal static class Settings
             {
                 _current = new SettingsData();
                 SaveDefaults(_current);
+                ApplyRuntimeOptions(_current);
                 SeedStore.Log($"[设置] 首次运行，已写入默认配置: {FilePath}");
                 return;
             }
@@ -92,19 +102,44 @@ internal static class Settings
             var loaded = JsonSerializer.Deserialize<SettingsData>(json, Json);
             if (loaded == null)
             {
-                SeedStore.Log("[设置] 配置文件解析为空，用默认值");
                 _current = new SettingsData();
+                ApplyRuntimeOptions(_current);
+                SeedStore.Log("[设置] 配置文件解析为空，用默认值");
                 return;
             }
 
             _current = Sanitize(loaded);
+            ApplyRuntimeOptions(_current);
             SeedStore.Log($"[设置] 已加载: {FilePath}");
         }
         catch (Exception ex)
         {
-            SeedStore.Log($"[设置] 读取失败，用默认值: {ex.GetType().Name}: {ex.Message}");
             _current = new SettingsData();
+            ApplyRuntimeOptions(_current);
+            SeedStore.Warn($"[设置] 读取失败，用默认值: {ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+    /// <summary>把设置里的运行时开关应用到日志系统。</summary>
+    static void ApplyRuntimeOptions(SettingsData d)
+    {
+        try
+        {
+            Logger.Level = Logger.ParseLevel(d.LogLevel);
+
+            // 日志语言：留空就跟随游戏语言
+            var lang = d.LogLanguage;
+            if (string.IsNullOrWhiteSpace(lang))
+            {
+                try
+                {
+                    lang = Godot.TranslationServer.GetLocale();   // 形如 "zh_CN" / "en"
+                }
+                catch { lang = "zh"; }
+            }
+            Logger.English = lang != null && lang.StartsWith("en", StringComparison.OrdinalIgnoreCase);
+        }
+        catch { /* 设置失败不影响功能 */ }
     }
 
     static void SaveDefaults(SettingsData d)
@@ -115,7 +150,7 @@ internal static class Settings
             File.WriteAllText(tmp, JsonSerializer.Serialize(d, Json), new UTF8Encoding(false));
             File.Move(tmp, FilePath, overwrite: true);
         }
-        catch (Exception ex) { SeedStore.Log("[设置] 写默认配置失败: " + ex.Message); }
+        catch (Exception ex) { SeedStore.Warn("[设置] 写默认配置失败: " + ex.Message); }
     }
 
     /// <summary>把明显不合理的值纠正回安全范围（用户手改 json 时难免写错）。</summary>
