@@ -1,0 +1,18 @@
+# ---- 构建产物 ----
+bin/
+obj/
+*.user
+*.suo
+
+# ---- 发布包 ----
+dist/
+*.zip
+
+# ---- 游戏部署目录（如果误建在仓库里）----
+mods/
+
+# ---- 运行时数据（通常不在这里，但以防万一）----
+*.log
+seeds_found.json
+seeds_used.json
+cursor.json

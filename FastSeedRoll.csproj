@@ -1,0 +1,79 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- ============================================================
+       FastSeedRoll —— 固定条件快速筛种（依赖 RolltheSpire2）
+       纯代码 Mod：无 Godot、无 pck、不注册任何 UI。
+       构建方式照抄 AllCardsPurge（已验证可行）。
+       ============================================================ -->
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <LangVersion>13.0</LangVersion>
+    <AssemblyName>FastSeedRoll</AssemblyName>
+    <RootNamespace>FastSeedRoll</RootNamespace>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <NoWarn>CS0168;CS0219;CS8600;CS8602;CS8603;CS8604;CS8618</NoWarn>
+    <!--
+      ★ 注意：这几个路径只影响【编译】，不会进入 dll，也不影响【运行】。
+        运行时那份写死的路径已经在 P0 里全部删掉了
+        （GameInterop / Rt2Binding 都改成从已加载程序集里取）。
+        所以发布出去的包里不含任何盘符。
+
+      换机器 / 换盘时，用环境变量覆盖即可，不用改文件：
+        $env:STS2_GAME_DIR = "E:\Steam\steamapps\common\Slay the Spire 2"
+        $env:STS2_RT2_DIR  = "E:\Steam\steamapps\workshop\content\2868840\3755166888\RolltheSpire2"
+    -->
+    <GameDir Condition="'$(GameDir)' == '' AND '$(STS2_GAME_DIR)' != ''">$(STS2_GAME_DIR)</GameDir>
+    <GameDir Condition="'$(GameDir)' == ''">D:\steam\steamapps\common\Slay the Spire 2</GameDir>
+    <GameDataDir>$(GameDir)\data_sts2_windows_x86_64</GameDataDir>
+    <Rt2Dir Condition="'$(Rt2Dir)' == '' AND '$(STS2_RT2_DIR)' != ''">$(STS2_RT2_DIR)</Rt2Dir>
+    <Rt2Dir Condition="'$(Rt2Dir)' == ''">D:\steam\steamapps\workshop\content\2868840\3755166888\RolltheSpire2</Rt2Dir>
+    <ModsDir>$(GameDir)\mods\FastSeedRoll</ModsDir>
+  </PropertyGroup>
+
+  <!-- 直接 HintPath 引用，不走 NuGet（沙箱无外网） -->
+  <ItemGroup>
+    <Reference Include="sts2">
+      <HintPath>$(GameDataDir)\sts2.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(GameDataDir)\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- 为了操作自定义开局的种子输入框（LineEdit）和系统剪贴板 -->
+    <Reference Include="GodotSharp">
+      <HintPath>$(GameDataDir)\GodotSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- RolltheSpire2：编译期引用它的 public 搜索 API。
+         若你不想在编译期依赖它，可把下面这段注释掉 —— 代码里所有 RT2 访问都走反射，
+         编译期引用只是为了方便 IDE 补全与类型检查。 -->
+    <Reference Include="RolltheSpire2">
+      <HintPath>$(Rt2Dir)\RolltheSpire2.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- 编译后自动部署。加 -p:SkipDeploy=true 可只编译不部署。 -->
+  <Target Name="DeployToMods" AfterTargets="Build" Condition="'$(SkipDeploy)' != 'true'">
+    <ItemGroup>
+      <_OutFiles Include="$(TargetDir)$(AssemblyName).dll" />
+      <_OutFiles Include="$(TargetDir)$(AssemblyName).pdb" Condition="Exists('$(TargetDir)$(AssemblyName).pdb')" />
+      <_Manifest Include="$(MSBuildProjectDirectory)\FastSeedRoll.json" />
+      <_Extra Include="$(MSBuildProjectDirectory)\Pause.cmd" Condition="Exists('$(MSBuildProjectDirectory)\Pause.cmd')" />
+      <_Extra Include="$(MSBuildProjectDirectory)\README.md" Condition="Exists('$(MSBuildProjectDirectory)\README.md')" />
+      <_Extra Include="$(MSBuildProjectDirectory)\LICENSE" Condition="Exists('$(MSBuildProjectDirectory)\LICENSE')" />
+    </ItemGroup>
+    <MakeDir Directories="$(ModsDir)" />
+    <Copy SourceFiles="@(_OutFiles)" DestinationFolder="$(ModsDir)" ContinueOnError="true" />
+    <Copy SourceFiles="@(_Manifest)" DestinationFolder="$(ModsDir)" ContinueOnError="true" />
+    <Copy SourceFiles="@(_Extra)" DestinationFolder="$(ModsDir)" ContinueOnError="true" />
+    <Message Importance="high" Text="[FastSeedRoll] 已部署到 $(ModsDir)" />
+  </Target>
+
+</Project>
