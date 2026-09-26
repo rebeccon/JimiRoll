@@ -1,7 +1,7 @@
 using System.Text;
 using Godot;
 
-namespace FastSeedRoll;
+namespace JimiRoll;
 
 /// <summary>
 /// 储备池的视图 + 对外动作（打日志、放剪贴板、取走下一个）。

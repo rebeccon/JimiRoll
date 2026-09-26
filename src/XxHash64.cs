@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using System.Numerics;
 
-namespace FastSeedRoll;
+namespace JimiRoll;
 
 /// <summary>
 /// XxHash64（seed = 0）的托管实现 —— 等价于

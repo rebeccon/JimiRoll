@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.Json;
 
-namespace FastSeedRoll;
+namespace JimiRoll;
 
 /// <summary>一条命中记录（储备池里的一项）。</summary>
 internal sealed class SeedHit
@@ -62,13 +62,13 @@ internal static class SeedStore
 
     public static string Dir { get; } = System.IO.Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "SlayTheSpire2", "FastSeedRoll");
+        "SlayTheSpire2", "JimiRoll");
 
     public static string CursorPath => Path.Combine(Dir, "cursor.json");
     public static string ResultsPath => Path.Combine(Dir, "seeds_found.json");
     public static string UsedPath => Path.Combine(Dir, "seeds_used.json");
     public static string SeedsTextPath => Path.Combine(Dir, "seeds.txt");
-    public static string LogPath => Path.Combine(Dir, "fastseedroll.log");
+    public static string LogPath => Path.Combine(Dir, "JimiRoll.log");
 
     static readonly object FileGate = new();
     static List<SeedHit> _reserve;
@@ -83,7 +83,7 @@ internal static class SeedStore
     public static void EnsureDir()
     {
         try { Directory.CreateDirectory(Dir); }
-        catch (Exception ex) { Console.WriteLine("[FastSeedRoll] 建目录失败: " + ex.Message); }
+        catch (Exception ex) { Console.WriteLine("[JimiRoll] 建目录失败: " + ex.Message); }
     }
 
     // ==================================================================
@@ -310,7 +310,7 @@ internal static class SeedStore
 
         var lines = new List<string>
         {
-            "# FastSeedRoll 储备种子（每行一个，直接复制到游戏的种子输入框）",
+            "# JimiRoll 储备种子（每行一个，直接复制到游戏的种子输入框）",
             "# 条件: " + Conditions.Describe(),
             $"# 储备数量: {ordered.Count} / {Conditions.ReserveCapacity}",
             "#",
@@ -366,7 +366,7 @@ internal static class SeedStore
         var line = $"[{DateTime.Now:HH:mm:ss}] {message}";
         try
         {
-            Console.WriteLine("[FastSeedRoll] " + message);
+            Console.WriteLine("[JimiRoll] " + message);
             EnsureDir();
             File.AppendAllText(LogPath, line + Environment.NewLine);
         }

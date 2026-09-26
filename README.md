@@ -1,4 +1,4 @@
-# 基米roll种器（FastSeedRoll）
+# 基米roll种器（JimiRoll）
 
 > 为《杀戮尖塔 2》自动筛选固定条件的开局种子 —— 装好即用，不需要任何操作。
 
@@ -20,7 +20,7 @@
 
 ## 怎么用
 
-1. 把 `FastSeedRoll` 文件夹放进游戏 mods 目录
+1. 把 `JimiRoll` 文件夹放进游戏 mods 目录
 2. 确认 mod 列表里 **RolltheSpire2** 和 **基米roll种器** 都是启用状态
 3. 进游戏，回一次主菜单 —— 它就自动开始干活了
 
@@ -56,7 +56,7 @@
 
 ## 数据文件
 
-都在 `%APPDATA%\SlayTheSpire2\FastSeedRoll\`：
+都在 `%APPDATA%\SlayTheSpire2\JimiRoll\`：
 
 | 文件 | 内容 |
 |---|---|
@@ -64,7 +64,7 @@
 | `seeds.txt` | 储备池的纯文本清单，一行一个 |
 | `seeds_used.json` | 归档：用掉的 + 超上限移出的，只增不删 |
 | `cursor.json` | 扫到哪个位置了（跨会话续扫，不重复） |
-| `fastseedroll.log` | 运行日志 |
+| `JimiRoll.log` | 运行日志 |
 
 ---
 
@@ -79,13 +79,13 @@
 ### 看日志
 
 ```
-%APPDATA%\SlayTheSpire2\FastSeedRoll\fastseedroll.log
+%APPDATA%\SlayTheSpire2\JimiRoll\JimiRoll.log
 ```
 
 正常启动长这样：
 
 ```
-==================== FastSeedRoll 启动 ====================
+==================== JimiRoll 启动 ====================
 条件: 涅奥骨骰=RELIC:NEOWS_BONES; 遗物=...; 诅咒=CARD:GUILTY; 第一章问号>=12; ...
 运行模式: 默认自动运行（储备池不满就补搜，满了就空闲待命）
 储备池: 13/15 个（按优先级排序）
@@ -112,7 +112,7 @@ RT2 接线状态: ✓ 已就绪
 
 看日志里有没有 `[种子框]` 开头的行，会说明卡在哪一步。
 如果这个功能本身出问题，可以建一个空文件
-`%APPDATA%\SlayTheSpire2\FastSeedRoll\DISABLE_SEED_PATCH.txt` 单独关掉它。
+`%APPDATA%\SlayTheSpire2\JimiRoll\DISABLE_SEED_PATCH.txt` 单独关掉它。
 
 ---
 

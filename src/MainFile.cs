@@ -1,7 +1,7 @@
 using System.Reflection;
 using HarmonyLib;
 
-namespace FastSeedRoll;
+namespace JimiRoll;
 
 /// <summary>
 /// Mod 入口 + 开关。
@@ -24,7 +24,7 @@ public static class MainFile
     /// 所以空闲时它完全不占资源。只有"用掉一个 → 掉到 14"之后才会补搜一下。
     ///
     /// 这个文件是【唯一的例外】—— 存在它就暂停搜索（给排障/不想让它跑时用）：
-    /// <c>%APPDATA%\SlayTheSpire2\FastSeedRoll\DISABLE_SEARCH.txt</c>
+    /// <c>%APPDATA%\SlayTheSpire2\JimiRoll\DISABLE_SEARCH.txt</c>
     /// </summary>
     public static string DisableSearchFile => Path.Combine(SeedStore.Dir, "DISABLE_SEARCH.txt");
 
@@ -54,7 +54,7 @@ public static class MainFile
 
     static bool DoOneTimeSetup()
     {
-        SeedStore.Log("==================== FastSeedRoll 启动 ====================");
+        SeedStore.Log("==================== JimiRoll 启动 ====================");
         SeedStore.Log("条件: " + Conditions.Describe());
         SeedStore.Log("运行模式: 默认自动运行（储备池不满就补搜，满了就空闲待命）");
         SeedStore.Log("  唯一的暂停方式: 建一个空文件 " + DisableSearchFile);
@@ -185,7 +185,7 @@ public static class MainFile
         {
             SearchDriver.Stop();
             SeedStore.Flush();
-            SeedStore.Log("FastSeedRoll 退出");
+            SeedStore.Log("JimiRoll 退出");
         }
         catch { }
     }

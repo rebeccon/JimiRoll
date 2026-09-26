@@ -3,7 +3,7 @@ using System.Reflection;
 using Godot;
 using HarmonyLib;
 
-namespace FastSeedRoll;
+namespace JimiRoll;
 
 /// <summary>
 /// 打开「自定义开局」界面时：
@@ -26,7 +26,7 @@ namespace FastSeedRoll;
 /// 异常逃进 Godot 的回调，导致「自定义开局」界面直接打不开：
 ///
 ///   ERROR: System.OverflowException: TimeSpan overflowed because the duration is too long.
-///     at FastSeedRoll.SeedInputPatch.Fill(...)
+///     at JimiRoll.SeedInputPatch.Fill(...)
 ///     at ...NCustomRunScreen.InitializeSingleplayer()
 ///
 /// 教训有两条，都已落实：
@@ -42,7 +42,7 @@ internal static class SeedInputPatch
 
     /// <summary>
     /// ★ 运行时保险：存在这个文件就跳过本补丁（不用重新编译）。
-    /// 路径：<c>%APPDATA%\SlayTheSpire2\FastSeedRoll\DISABLE_SEED_PATCH.txt</c>
+    /// 路径：<c>%APPDATA%\SlayTheSpire2\JimiRoll\DISABLE_SEED_PATCH.txt</c>
     /// 万一这个补丁又把「自定义开局」搞坏了，建个这个文件就能立刻恢复。
     /// </summary>
     public static string DisableFlag =>

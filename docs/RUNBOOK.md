@@ -1,4 +1,4 @@
-# FastSeedRoll —— 上手与验证 runbook
+# JimiRoll —— 上手与验证 runbook
 
 > 我（AI）在本轮**无法执行 shell**（连续三轮 `pwsh` 被拒），所以下面每一步都需要你来跑。
 > 所有验证脚本都已写好，**你只需要复制粘贴命令**。
@@ -10,9 +10,9 @@
 
 ```
 杀戮尖塔/
-├── FastSeedRoll/                  新 Mod（本目标）
-│   ├── FastSeedRoll.csproj
-│   ├── FastSeedRoll.json          manifest（dependencies: RolltheSpire2）
+├── JimiRoll/                  新 Mod（本目标）
+│   ├── JimiRoll.csproj
+│   ├── JimiRoll.json          manifest（dependencies: RolltheSpire2）
 │   ├── SeedCodec.cs               34 进制种子编解码 + 边界自检
 │   ├── XxHash64.cs                自研哈希（会被对拍，写错也不会出错结果）
 │   ├── GameInterop.cs             与游戏交互 + ★关键对拍
@@ -29,7 +29,7 @@
 │   ├── qnprobe.ps1                QnProbe 快捷入口
 │   └── notes/
 │       ├── RollTheSpire2-architecture.md   RT2 架构逆向（含全部一手证据）
-│       └── FastSeedRoll-design.md          设计备忘录 + 待补空白清单
+│       └── JimiRoll-design.md          设计备忘录 + 待补空白清单
 ```
 
 ### 关键设计：为什么 Mod 能"自动适配" RT2 的 API
@@ -134,7 +134,7 @@
 ## 第 3 步：编译 Mod
 
 ```powershell
-cd "C:\Users\rebeccon\Desktop\丁嘉跃\杀戮尖塔\FastSeedRoll"
+cd "C:\Users\rebeccon\Desktop\丁嘉跃\杀戮尖塔\JimiRoll"
 dotnet build
 ```
 
@@ -149,9 +149,9 @@ dotnet build
 
 1. 启动游戏，看日志
    `C:\Users\rebeccon\AppData\Roaming\SlayTheSpire2\logs\godot.log`
-   应能看到 `FastSeedRoll` 的加载与自检输出。
+   应能看到 `JimiRoll` 的加载与自检输出。
 2. **自检必须全绿**。任何一条 `[GameInterop]` 或 `[SeedCodec]` 的问题都会打到这里。
-3. 确认 `%APPDATA%\SlayTheSpire2\FastSeedRoll\` 下生成了
+3. 确认 `%APPDATA%\SlayTheSpire2\JimiRoll\` 下生成了
    `cursor.json`（游标）和 `seeds_found.json`（命中）。
 
 ---

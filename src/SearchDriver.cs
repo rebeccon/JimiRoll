@@ -3,7 +3,7 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 
-namespace FastSeedRoll;
+namespace JimiRoll;
 
 /// <summary>
 /// 两级漏斗搜索器。
@@ -72,7 +72,7 @@ internal static class SearchDriver
 
         var interop = GameInterop.Ready
             ? null
-            : $"[FastSeedRoll] ✗ GameInterop 不可用，无法搜索: {GameInterop.Failure}";
+            : $"[JimiRoll] ✗ GameInterop 不可用，无法搜索: {GameInterop.Failure}";
 
         if (interop != null) { SeedStore.Log(interop); return; }
 

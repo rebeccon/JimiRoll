@@ -1,6 +1,6 @@
 using System.Reflection;
 
-namespace FastSeedRoll;
+namespace JimiRoll;
 
 /// <summary>
 /// 反射工具：<b>按参数名</b>构造对象、按成员名赋值。

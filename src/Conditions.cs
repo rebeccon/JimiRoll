@@ -1,4 +1,4 @@
-namespace FastSeedRoll;
+namespace JimiRoll;
 
 /// <summary>
 /// ★ 你要的筛种条件 —— 改条件只需要改这个文件，然后重新编译。

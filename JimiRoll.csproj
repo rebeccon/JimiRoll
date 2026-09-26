@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!-- ============================================================
-       FastSeedRoll —— 固定条件快速筛种（依赖 RolltheSpire2）
+       JimiRoll —— 固定条件快速筛种（依赖 RolltheSpire2）
        纯代码 Mod：无 Godot、无 pck、不注册任何 UI。
        构建方式照抄 AllCardsPurge（已验证可行）。
        ============================================================ -->
@@ -11,8 +11,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>disable</Nullable>
     <LangVersion>13.0</LangVersion>
-    <AssemblyName>FastSeedRoll</AssemblyName>
-    <RootNamespace>FastSeedRoll</RootNamespace>
+    <AssemblyName>JimiRoll</AssemblyName>
+    <RootNamespace>JimiRoll</RootNamespace>
     <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
@@ -32,7 +32,7 @@
     <GameDataDir>$(GameDir)\data_sts2_windows_x86_64</GameDataDir>
     <Rt2Dir Condition="'$(Rt2Dir)' == '' AND '$(STS2_RT2_DIR)' != ''">$(STS2_RT2_DIR)</Rt2Dir>
     <Rt2Dir Condition="'$(Rt2Dir)' == ''">D:\steam\steamapps\workshop\content\2868840\3755166888\RolltheSpire2</Rt2Dir>
-    <ModsDir>$(GameDir)\mods\FastSeedRoll</ModsDir>
+    <ModsDir>$(GameDir)\mods\JimiRoll</ModsDir>
   </PropertyGroup>
 
   <!-- 直接 HintPath 引用，不走 NuGet（沙箱无外网） -->
@@ -64,7 +64,7 @@
     <ItemGroup>
       <_OutFiles Include="$(TargetDir)$(AssemblyName).dll" />
       <_OutFiles Include="$(TargetDir)$(AssemblyName).pdb" Condition="Exists('$(TargetDir)$(AssemblyName).pdb')" />
-      <_Manifest Include="$(MSBuildProjectDirectory)\FastSeedRoll.json" />
+      <_Manifest Include="$(MSBuildProjectDirectory)\JimiRoll.json" />
       <_Extra Include="$(MSBuildProjectDirectory)\Pause.cmd" Condition="Exists('$(MSBuildProjectDirectory)\Pause.cmd')" />
       <_Extra Include="$(MSBuildProjectDirectory)\README.md" Condition="Exists('$(MSBuildProjectDirectory)\README.md')" />
       <_Extra Include="$(MSBuildProjectDirectory)\LICENSE" Condition="Exists('$(MSBuildProjectDirectory)\LICENSE')" />
@@ -73,7 +73,7 @@
     <Copy SourceFiles="@(_OutFiles)" DestinationFolder="$(ModsDir)" ContinueOnError="true" />
     <Copy SourceFiles="@(_Manifest)" DestinationFolder="$(ModsDir)" ContinueOnError="true" />
     <Copy SourceFiles="@(_Extra)" DestinationFolder="$(ModsDir)" ContinueOnError="true" />
-    <Message Importance="high" Text="[FastSeedRoll] 已部署到 $(ModsDir)" />
+    <Message Importance="high" Text="[JimiRoll] 已部署到 $(ModsDir)" />
   </Target>
 
 </Project>

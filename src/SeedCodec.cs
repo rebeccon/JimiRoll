@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace FastSeedRoll;
+namespace JimiRoll;
 
 /// <summary>
 /// 种子字符串 &lt;-&gt; ordinal 的编解码。

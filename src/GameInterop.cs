@@ -4,7 +4,7 @@ using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Map;
 using MegaCrit.Sts2.Core.Random;
 
-namespace FastSeedRoll;
+namespace JimiRoll;
 
 /// <summary>
 /// 与游戏侧交互的入口。

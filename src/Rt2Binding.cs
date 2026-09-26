@@ -2,7 +2,7 @@ using System.Reflection;
 using System.Text;
 using MegaCrit.Sts2.Core.Random;
 
-namespace FastSeedRoll;
+namespace JimiRoll;
 
 /// <summary>
 /// 第②级：用 RolltheSpire2 的单种子预测判断「这个种子满足骨骰条件吗」。
@@ -10,7 +10,7 @@ namespace FastSeedRoll;
 /// ============================================================================
 /// 本实现全部基于【实测过的 API】，不再靠猜
 /// ============================================================================
-/// 已用运行时探针逐项验证（见 _tools/notes/FastSeedRoll-findings.md）：
+/// 已用运行时探针逐项验证（见 _tools/notes/JimiRoll-findings.md）：
 ///
 ///   ModelKey = RolltheSpire2.Core.Identity.ModelKey（**RT2 自己的类型**，不在 sts2 里）
 ///               ctor (string category, string entry)，格式 "RELIC:NEOWS_BONES"
@@ -201,7 +201,7 @@ internal static class Rt2Binding
         Diag.AppendLine($"[RT2] SeedPredictionRequest 参数数 = {_requestCtor.GetParameters().Length}");
     }
 
-    const string _rt2_marker = "FastSeedRoll";
+    const string _rt2_marker = "JimiRoll";
 
     /// <summary>
     /// 探测到的游戏版本（规范化后的，如 "0.111.0"）。
@@ -315,7 +315,7 @@ internal static class Rt2Binding
         // 回退：自己按 6 参构造造一个（字段名已用探针核实）
         return _detectionT.GetConstructor(new[]
             { typeof(string), typeof(string), typeof(string), typeof(string), typeof(bool), typeof(string) })!
-            .Invoke(new object[] { version, version, "", "FastSeedRoll(probed)", true, "" });
+            .Invoke(new object[] { version, version, "", "JimiRoll(probed)", true, "" });
     }
 
     static string Character()

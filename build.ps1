@@ -1,5 +1,5 @@
 # ============================================================
-#  FastSeedRoll  --  build & package
+#  JimiRoll  --  build & package
 #
 #  Produces a ready-to-publish zip in  dist\
 #
@@ -21,8 +21,8 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $root    = $PSScriptRoot
-$csproj  = Join-Path $root 'FastSeedRoll.csproj'
-$manifest= Join-Path $root 'FastSeedRoll.json'
+$csproj  = Join-Path $root 'JimiRoll.csproj'
+$manifest= Join-Path $root 'JimiRoll.json'
 $outDir  = Join-Path $root 'dist'
 
 # ---- read id / version straight from the manifest (single source of truth) ----
