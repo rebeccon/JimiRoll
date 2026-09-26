@@ -96,6 +96,23 @@ public static class MainFile
 
         SeedStore.Log("种子哈希: " + GameInterop.VerifyReport);
 
+        // ---- 1.5 第②级预测器：主线程初始化（要访问 ModelDb）----
+        //  ★ 必须在主线程：NeowPredict 要读 ModelDb.CardPool<CurseCardPool>()。
+        //    本方法由 NMainMenu._Ready 的后置补丁调用，那正是主线程。
+        var predictOk = NeowPredict.Initialize();
+        SeedStore.Log("自研判定状态: " + NeowPredict.Status);
+        if (!predictOk)
+        {
+            SeedStore.Error("✗ 自研判定没初始化成功 —— 拒绝搜索（不给错种子）");
+            return false;
+        }
+
+        // ---- 1.6 自研预测器自检：用游戏内实测过的已知命中种子 ----
+        //  ★ 这一条是摘掉 RT2 之后最重要的保险：14 个地面真值种子必须全部判为命中。
+        //    任何一个不过，都说明 RNG 流 / 池子顺序 / 前置消耗的推导有问题。
+        try { NeowPredict.SelfTest(problems); }
+        catch (Exception ex) { problems.Add("[自研] 自检抛异常: " + ex); }
+
         if (problems.Count > 0)
         {
             SeedStore.Error("✗✗✗ 自检失败，为避免给出错误种子，搜索不会启动：");
@@ -104,7 +121,7 @@ public static class MainFile
         }
         SeedStore.Log("✓ 自检通过（种子哈希与游戏一致）");
 
-        // ---- 2. 第①级冒烟测试（不碰 RT2）----
+        // ---- 2. 第①级冒烟测试（问号数预筛，纯自研）----
         try
         {
             var smoke = SearchDriver.QuickSelfTest(0, 200_000);
@@ -116,18 +133,8 @@ public static class MainFile
             return false;
         }
 
-        // ---- 3. 第②级（RT2）----
-        //  ★ 必须在主线程初始化：骨骰效果需要「运行时快照」，抓快照有主线程守卫。
-        //    本方法由 NMainMenu._Ready 的后置补丁调用，那正是主线程。
-        var rt2Ok = Rt2Binding.InitializeOnMainThread();
-        SeedStore.Log("RT2 接线状态: " + Rt2Binding.Status);
-        if (!rt2Ok)
-        {
-            SeedStore.Log("⇒ 骨骰的遗物/诅咒判定依赖运行时快照，拿不到就无法筛种。");
-            return false;
-        }
-
-        SeedStore.Log("✓✓ 全部就绪 —— 储备池不满时会自动补搜");
+        // 第②级（骨骰判定）已经在 1.5 / 1.6 初始化并自检过了。
+        SeedStore.Log("✓✓ 全部就绪 —— 储备池不满时会自动补搜（不依赖任何第三方模组）");
         return true;
     }
 
