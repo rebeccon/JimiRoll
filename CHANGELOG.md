@@ -7,10 +7,9 @@
 ## [未发布]
 
 ### 计划中
-- P3：`Rt2Binding` 的反射改成强类型引用 + 契约自检
 - P4：日志分级（INFO/WARN/ERROR）+ 中英本地化
 - P5：游戏内小面板（显示储备数量、复制种子）
-- P6：一键打包 + 发布前验证清单
+- P6：发布前验证清单 + GitHub
 
 详见 `docs/正式化方案.md`。
 
@@ -18,19 +17,43 @@
 
 ## [1.0.0] - 2026-09-26
 
-### 工程（P1 / P2 已完成）
-- 仓库结构：源码 `src/`、内部文档 `docs/`、`.gitignore`、`.gitattributes`
-- `LICENSE`：MIT
-- `README.md`：完整使用文档（Markdown）
-- `build.ps1`：一键打包，产物 `dist/<id>-<version>.zip`
-- **可调参数外部化到 `settings.json`**（P2）—— 问号门槛、角色、难度、储备池容量、
-  线程数、单次时间上限都改成从配置文件读，改完不用重新编译。
-  数值不合理会自动纠正并记日志。
-- **无硬编码路径**（P0）—— 运行时不写死任何盘符；编译期路径可由
-  `STS2_GAME_DIR` / `STS2_RT2_DIR` 环境变量覆盖。
-- **游戏版本实时探测**（P0）—— 三级尝试（RT2 探测器 → `NGame.GetGameVersion`
-  → `release_info.json`），全失败则明确报错并停止，绝不使用猜测值。
-- **默认自动运行**（P0）—— 不再需要开关文件。储备池满了就空闲待命。
+### 工程（P0 / P1 / P2 / P3 已完成）
+
+**P0 —— 去掉硬编码**
+- 运行时不再写死任何盘符路径（原来有 3 处）；编译期路径可由
+  `STS2_GAME_DIR` / `STS2_RT2_DIR` 环境变量覆盖
+- 游戏版本号**实时探测**（三级：RT2 探测器 → `NGame.GetGameVersion` → `release_info.json`），
+  全失败则明确报错并停止，**绝不使用猜测值**
+- 默认自动运行，不再需要开关文件
+
+**P1 —— 工程配置**
+- 仓库结构：`src/`、`docs/`、`.gitignore`、`.gitattributes`
+- MIT 许可证、完整 `README.md`、本 `CHANGELOG.md`
+- `build.ps1` 一键打包 → `dist/<id>-<version>.zip`
+
+**P2 —— 可调参数外部化**
+- 问号门槛、角色、难度、储备池容量、线程数、单次时间上限
+  改为从 `settings.json` 读，改完不用重新编译
+- 数值不合理会自动纠正并记日志
+- 筛种条件本身（哪些遗物、哪个诅咒）**故意**仍留在代码里
+
+**P3 —— 反射改为编译期强类型引用**
+- `Rt2Binding` 从 400 行反射改为直接引用 RT2 类型：
+  **名字写错 = 编译不过**，而不是运行时静默失效
+- 删除已无人调用的 `src/Reflect.cs`（159 行死代码）
+- `GameInterop` 的种子哈希改为直接调用 `StringHelper.GetDeterministicHashCode`
+- 代码量 3542 → 1952 行（净 -267 行）
+
+**P3 过程中发现并记录的事实**
+- `ModelKey` 是 **struct**（值类型），不是类 —— 反射时被装箱所以一直没暴露。
+  因此不能用 `== null` 判断，要用 `IsValid`。
+- `SeedPredictionRequest` 构造函数的第 13 个参数类型
+  `RolltheSpire2.Core.Prediction.TrustedRootHashInput` 是 **internal**，
+  导致构造函数对外不可见、**编译期无法调用**。
+  ⇒ 该处保留反射，按**参数名**匹配填入，并在启动时校验构造函数签名。
+- `BaseGameModelKeys.Characters` 只有 5 个原版角色：
+  `Ironclad / Silent / Defect / Necrobinder / Regent`（观者 Watcher 是 Mod 角色，不在其中）。
+
 
 
 首个可用版本。
