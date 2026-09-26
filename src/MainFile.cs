@@ -55,6 +55,11 @@ public static class MainFile
     static bool DoOneTimeSetup()
     {
         SeedStore.Log("==================== JimiRoll 启动 ====================");
+
+        // ---- 先加载设置：后面的日志和逻辑都要用它 ----
+        Settings.Load();
+        SeedStore.Log("设置: " + Settings.Describe());
+        SeedStore.Log("  配置文件: " + Settings.FilePath);
         SeedStore.Log("条件: " + Conditions.Describe());
         SeedStore.Log("运行模式: 默认自动运行（储备池不满就补搜，满了就空闲待命）");
         SeedStore.Log("  唯一的暂停方式: 建一个空文件 " + DisableSearchFile);
