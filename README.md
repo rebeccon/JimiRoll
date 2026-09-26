@@ -118,18 +118,42 @@ RT2 接线状态: ✓ 已就绪
 
 ## 改条件
 
-条件写在 `src/Conditions.cs` 里，改完重新编译：
+### 可调参数（不用重新编译）
 
-```csharp
-public const int  TargetAct1UnknownRooms = 12;    // 问号房间阈值
-public const bool RequireExactUnknownRooms = false; // false = ≥，true = 必须恰好等于
-public const int  ReserveCapacity = 15;            // 储备池数量
-public const int  MaxRunMinutes = 3;               // 单次搜索时间上限
-public const string CharacterKey = "CHARACTER:SILENT";
-public const int  Ascension = 10;
+改 `%APPDATA%\SlayTheSpire2\JimiRoll\settings.json`：
+
+```jsonc
+{
+  "ReserveCapacity": 15,          // 储备池容量（恒定维持这个数量）
+  "MinUnknownRooms": 12,          // 第一章问号房间门槛（只可能 10~14）
+  "RequireExactUnknownRooms": false,  // false = ≥，true = 必须恰好等于
+  "CharacterKey": "CHARACTER:SILENT",
+  "Ascension": 10,
+  "PlayersCount": 1,
+  "MaxRunMinutes": 3,             // 单次搜索时间上限
+  "WorkerCount": 1
+}
 ```
 
-> 改成 `settings.json` 外部化在计划中（见 `CHANGELOG.md`）。
+改完**重启游戏**生效（配置在启动时读一次）。
+数值写得不合理会自动纠正回默认值，并在日志里说明。
+
+### 筛种条件本身（需要重新编译）
+
+哪些遗物、哪个诅咒**故意**留在代码里 —— 这部分不该随便改，改错代价大。
+在 `src/Conditions.cs`：
+
+```csharp
+public const string RequireRelicKey      = "RELIC:NEOWS_BONES";       // 涅奥骨骰
+public static readonly string[] RequiredBonesRelics = {               // 骨骰要给的两个
+    "RELIC:PRECARIOUS_SHEARS",   // 松动羊毛剪
+    "RELIC:NEW_LEAF",            // 新叶
+};
+public const string RequiredFinalCurseKey = "CARD:GUILTY";            // 愧疚
+```
+
+改完 `dotnet build -c Release` 即可。
+
 
 ---
 
