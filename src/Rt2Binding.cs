@@ -1,6 +1,11 @@
-using System.Reflection;
-using System.Text;
-using MegaCrit.Sts2.Core.Random;
+using RolltheSpire2.Compatibility;
+using RolltheSpire2.Core.Authority;
+using RolltheSpire2.Core.Effects;
+using RolltheSpire2.Core.Identity;
+using RolltheSpire2.Core.Neow;
+using RolltheSpire2.Core.Prediction;
+using RolltheSpire2.Core.World;
+using RolltheSpire2.Infrastructure.Snapshots;
 
 namespace JimiRoll;
 
@@ -8,72 +13,55 @@ namespace JimiRoll;
 /// 第②级：用 RolltheSpire2 的单种子预测判断「这个种子满足骨骰条件吗」。
 ///
 /// ============================================================================
-/// 本实现全部基于【实测过的 API】，不再靠猜
+/// ★ P3 改动：从【反射】改成【编译期强类型引用】
 /// ============================================================================
-/// 已用运行时探针逐项验证（见 _tools/notes/JimiRoll-findings.md）：
+/// 旧版这里 400 多行几乎全是反射（<c>GetType("...")</c> + <c>GetMethod(...)</c> +
+/// <c>Invoke(...)</c>）。问题在于：RT2 一旦改了字段名或方法签名，
+/// 反射会在运行时**静默失效** —— 判定永远返回 false，你以为"没找到种子"，
+/// 实际是接线断了。而如果只是给出错误的判定结果，那更糟。
 ///
-///   ModelKey = RolltheSpire2.Core.Identity.ModelKey（**RT2 自己的类型**，不在 sts2 里）
-///               ctor (string category, string entry)，格式 "RELIC:NEOWS_BONES"
-///   更有用：RolltheSpire2.Core.Identity.BaseGameModelKeys+Relics / +Cards / +Characters
-///           里已有全部现成静态字段（NeowsBones / PrecariousShears / NewLeaf / Guilty）
-///           ⇒ 完全不需要拼字符串
+/// 现在改成直接引用类型（csproj 已 <c>HintPath</c> 引用 RolltheSpire2.dll），
+/// 于是：<b>名字写错 = 编译不过</b>。RT2 更新后你会立刻在编译期发现问题，
+/// 而不是在游戏里悄悄拿到错种子。
 ///
-///   RuntimeProfileRegistry.Select(GameVersionDetection)      → Beta111Profile
-///   GameVersionDetection(raw, normalized, branch, evidence, isExact, failure)  6 参 public ctor
-///   CharacterIdentity.FromKey(ModelKey)
-///   AncientOptionConditionProfile.BroadDefault               ← 现成默认值
-///   RuntimeProfileRegistry.Predict(detection, SeedPredictionRequest) → SeedPredictionDocument
+/// 代价：编译期必须能拿到 RolltheSpire2.dll（换机器要配 <c>STS2_RT2_DIR</c>）。
+/// 这是有意的取舍 —— 宁可在编译时报错，也不要在运行时静默出错。
 ///
-///   document.Sections[Kind == NeowIdentity].NeowChoices[i]
-///       .RelicKey                                   ← Neow 给的遗物
-///       .BonesOutcome.OfferedRelics                 ← ★ 骨骰给出的两个遗物
-///       .EffectGroups[].OrderedItems[]              ← Kind=AddCard, TargetKey=CARD:GUILTY
+/// 唯一保留反射的地方是游戏侧的 <c>NCustomRunScreen._seedInput</c>
+/// （那是游戏的【私有字段】，没有公开访问方式），见 <see cref="SeedInputPatch"/>。
+/// ============================================================================
 ///
-/// ⚠️⚠️ 关键约束（实测发现，决定了整个架构）：
-///   <c>BonesOutcome</c> 只有在 authority 含有「骨骰合格遗物池」时才非 null，
-///   否则选项上会带警告 EvidenceCode = <c>bones-eligible-relic-pool-required</c>。
-///   而这个池子来自 <c>NeowsBones.GetValidRelics(Player)</c>，需要活的 Player
-///   ⇒ 只能通过 <c>CaptureRuntimeReadOnly</c> 抓，而它
-///   <b>必须在 Godot 主线程调用</b>（否则抛 RuntimeSnapshotCaptureRequiresGodotMainThread）。
+/// ⚠️ 关键约束（决定了整个调用时序）：
+///   <c>BonesOutcome</c> 只有在 authority 含「骨骰合格遗物池」时才非 null。
+///   那个池子来自 <c>NeowsBones.GetValidRelics(Player)</c>，需要活的 Player
+///   ⇒ 只能通过 <see cref="RuntimeContextAuthorityCapture.CaptureRuntimeReadOnly"/> 抓，
+///   而它<b>必须在 Godot 主线程调用</b>。
 ///
-///   ⇒ 所以本类分成两步：
+///   ⇒ 所以分两步：
 ///       <see cref="InitializeOnMainThread"/> —— 主线程调用，抓一次 authority
-///       <see cref="IsMatch"/>                —— 任意线程，用缓存 authority 判定
-/// ============================================================================
+///       <see cref="IsMatch"/>                —— 任意线程，用缓存的 authority 判定
 /// </summary>
 internal static class Rt2Binding
 {
-    /// <summary>
-    /// ⚠️ <b>线程静态</b>：之前是普通静态字段，被多个 worker 线程共享 ——
-    /// 线程 A 判失败写了「Neow 未给骨骰」，线程 B 判成功后来读，读到的是 A 的那句话，
-    /// 结果 seeds_found.json 里混进了一批「Evidence = Neow 未给骨骰」的假记录。
-    /// 改成线程静态后每个线程各看各的。
-    /// </summary>
-    [ThreadStatic] static string _evidence;
+    // ==================================================================
+    // 状态
+    // ==================================================================
 
-    public static string LastEvidence => _evidence ?? "";
-
-    /// <summary>单线程专用的 Predicting 锁 —— RT2 的 Predict 内部有共享状态，串行调用最稳。</summary>
-    static readonly object PredictGate = new();
-
-    static Assembly _rt2;
     static string _error;
     static bool _initTried;
-    static readonly StringBuilder Diag = new();
 
-    // 解析出来的类型
-    static Type _modelKey, _detectionT, _registryT, _requestT, _requestIdT, _domainSelT, _ancientT;
-    static Type _docT, _choiceT, _bonesOutcomeT, _effectGroupT, _effectT, _profileIdT, _charIdT;
+    static GameVersionDetection _detection;
+    static IRuntimeProfile _profile;
+    static RuntimeContextAuthoritySnapshot _authority;
 
-    // 条件用的 key 与角色
-    static object _bonesKey, _shearsKey, _leafKey, _guiltyKey, _charKey;
+    /// <summary>探测到的游戏版本（规范化后的，如 "0.111.0"）。</summary>
+    public static string GameVersion { get; private set; } = "";
 
-    static object _detection, _profile, _authority, _neowDomain, _broadDefault;
-    static ConstructorInfo _requestCtor;
-    static MethodInfo _predict, _charFromKey, _requestIdCreate;
+    /// <summary>版本号是从哪一级探测到的（诊断用）。</summary>
+    public static string VersionSource { get; private set; } = "";
 
-    /// <summary>können we 判定？</summary>
-    public static bool Ready => _error == null && _predict != null && _authority != null;
+    /// <summary>判定结果是否可用。</summary>
+    public static bool Ready => _error == null && _authority != null;
 
     public static string Status => _error != null
         ? "✗ " + _error
@@ -81,143 +69,136 @@ internal static class Rt2Binding
             ? "⏳ 已绑定，但还没抓运行时快照（需要在主线程调用 InitializeOnMainThread）"
             : "✓ 已就绪");
 
-    public static string Diagnostics => Diag.ToString();
+    /// <summary>RT2 的 Predict 内部有共享状态，串行调用最稳（实测瓶颈本就在这层，加锁零损失）。</summary>
+    static readonly object PredictGate = new();
 
     // ==================================================================
-    // 第一步：绑定（可在任意线程）
+    // 第一步：主线程初始化
     // ==================================================================
 
-    static void BindTypes()
+    /// <summary>
+    /// <b>必须在 Godot 主线程调用</b>（在 <c>NMainMenu._Ready</c> 里做正好）。
+    ///
+    /// 之所以必须：骨骰效果的真值来自 <c>NeowsBones.GetValidRelics(Player)</c>，
+    /// 它需要活着的 Player；RT2 的运行时快照抓取器有主线程守卫，
+    /// 非主线程会抛 <c>RuntimeSnapshotCaptureRequiresGodotMainThread</c>。
+    ///
+    /// 抓到的快照会被缓存，之后 <see cref="IsMatch"/> 可以在后台线程随便跑。
+    /// </summary>
+    public static bool InitializeOnMainThread()
     {
-        if (_rt2 != null) return;
+        if (_initTried && _authority != null) return true;
+        _initTried = true;
+        _error = null;
 
-        // ★ P0 改动：原来这里会兜底 LoadFrom 写死的创意工坊路径（含工坊编号 3755166888），
-        //   现在删掉 —— RT2 由游戏 Mod 加载器载入（我们在 manifest 里声明了依赖），
-        //   必然已经在已加载程序集列表里。写死路径会在换机器 / 工坊编号变化时失效。
-        //   找不到就明确报错，让问题暴露出来，而不是去猜路径。
-        _rt2 = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => a.GetName().Name == "RolltheSpire2");
-        if (_rt2 == null) throw new InvalidOperationException(
-            "RolltheSpire2 程序集未加载。请确认 manifest 里的 dependencies 写了 RolltheSpire2，" +
-            "并且在游戏的 mod 列表里它是启用状态。");
-
-        Diag.AppendLine($"[RT2] {_rt2.Location}");
-
-        Type Req(string n)
+        try
         {
-            var t = _rt2.GetType(n, false);
-            if (t == null)
+            // ---- 1. 版本探测（三级回退，全失败就明确报错）----
+            GameVersion = ResolveGameVersion();
+            SeedStore.Log($"[版本] 探测结果 = \"{GameVersion}\"");
+            if (!string.IsNullOrWhiteSpace(VersionSource))
+                SeedStore.Log($"[版本] 来源: {VersionSource}");
+            if (string.IsNullOrWhiteSpace(GameVersion))
             {
-                var ns = n[..n.LastIndexOf('.')];
-                var sib = string.Join(", ", _rt2.GetTypes().Where(x => x.Namespace == ns).Select(x => x.Name).Take(15));
-                Diag.AppendLine($"[RT2] ✗ 缺 {n}（同命名空间: {sib}）");
-                throw new InvalidOperationException($"RT2 缺类型 {n}");
+                _error = "无法探测游戏版本号。拒绝用一个猜测的版本继续（那会静默算错种子）。";
+                return false;
             }
-            return t;
+
+            // ---- 2. detection / profile ----
+            _detection = BuildDetection(GameVersion);
+            _profile = RuntimeProfileRegistry.Select(_detection);
+            if (_profile == null)
+            {
+                _error = $"RuntimeProfileRegistry.Select 对版本 \"{GameVersion}\" 返回了 null —— " +
+                         "该版本可能不被 RolltheSpire2 支持。";
+                return false;
+            }
+            SeedStore.Log($"[RT2] profile = {_profile.GetType().Name}");
+
+            // ---- 3. key 与角色 ----
+            var bonesKey = BaseGameModelKeys.Relics.NeowsBones;
+            var shearsKey = BaseGameModelKeys.Relics.PrecariousShears;
+            var leafKey = BaseGameModelKeys.Relics.NewLeaf;
+            var guiltyKey = BaseGameModelKeys.Cards.Guilty;
+            var charKey = ResolveCharacterKey();
+            _bonesKey = bonesKey; _shearsKey = shearsKey; _leafKey = leafKey;
+            _guiltyKey = guiltyKey; _charKey = charKey;
+
+            // ★ 注意：ModelKey 是 struct（值类型），不可能是 null ——
+            //   所以这里不能写 `bonesKey == null`。用 IsValid 判断。
+            if (!bonesKey.IsValid || !shearsKey.IsValid || !leafKey.IsValid
+                || !guiltyKey.IsValid || !charKey.IsValid)
+            {
+                _error = "BaseGameModelKeys 里的某个 key 无效（IsValid=false）。";
+                return false;
+            }
+
+            SeedStore.Log($"[RT2] key: 骨骰={bonesKey} 羊毛剪={shearsKey} 新叶={leafKey} " +
+                          $"愧疚={guiltyKey} 角色={charKey}");
+
+            _character = CharacterIdentity.FromKey(charKey);
+
+            // ---- 3.5 校验唯一的那个反射点（构造函数的某个参数类型是 internal，
+            //          编译期无法调用，只能用反射；这里确认它还对得上）----
+            if (!ValidateRequestCtor())
+            {
+                _error = "SeedPredictionRequest 构造函数校验失败: " + _requestCtorError;
+                return false;
+            }
+
+            // ---- 4. 抓运行时快照（★ 这一步是主线程硬性要求）----
+            _authority = RuntimeContextAuthorityCapture.CaptureRuntimeReadOnly(
+                _profile,
+                SeedCodec.Format(0),          // 与种子无关；骨骰池是按稀有度筛的
+                _character,
+                Conditions.Ascension,
+                GameVersion,
+                Conditions.PlayersCount,
+                0);
+
+            if (_authority == null)
+            {
+                _error = "RuntimeContextAuthorityCapture.CaptureRuntimeReadOnly 返回 null。";
+                return false;
+            }
+
+            // ---- 5. 确认骨骰池在不在（这决定 BonesOutcome 能否算出来）----
+            var pool = _authority.EffectAuthority?.BonesEligibleRelics;
+            var poolCount = pool?.Count ?? 0;
+            SeedStore.Log($"[authority] BonesEligibleRelics = {poolCount} 个  " +
+                          $"HasExactBonesPools = {_authority.EffectAuthority?.HasExactBonesPools}");
+
+            if (poolCount == 0)
+            {
+                _error = "快照里 BonesEligibleRelics 是空的 —— 骨骰条件无法判定。" +
+                         "（确认是在主线程、且游戏已完成初始化。）";
+                return false;
+            }
+
+            SeedStore.Log("[authority] ✓ 就绪");
+            return true;
         }
-
-        _modelKey = Req("RolltheSpire2.Core.Identity.ModelKey");
-        _charIdT = Req("RolltheSpire2.Core.Identity.CharacterIdentity");
-        _detectionT = Req("RolltheSpire2.Compatibility.GameVersionDetection");
-        _registryT = Req("RolltheSpire2.Compatibility.RuntimeProfileRegistry");
-        _profileIdT = Req("RolltheSpire2.Compatibility.RuntimeProfileId");
-        _requestT = Req("RolltheSpire2.Core.Prediction.SeedPredictionRequest");
-        _requestIdT = Req("RolltheSpire2.Core.Prediction.PredictionRequestId");
-        _domainSelT = Req("RolltheSpire2.Core.Prediction.SeedPredictionDomainSelection");
-        _ancientT = Req("RolltheSpire2.Core.World.AncientOptionConditionProfile");
-        _docT = Req("RolltheSpire2.Core.Prediction.SeedPredictionDocument");
-        _choiceT = Req("RolltheSpire2.Core.Neow.NeowChoiceResult");
-        _bonesOutcomeT = Req("RolltheSpire2.Core.Effects.BonesOutcomeAnalysis");
-        _effectGroupT = Req("RolltheSpire2.Core.Effects.PredictedEffectGroup");
-        _effectT = Req("RolltheSpire2.Core.Effects.PredictedEffect");
-
-        Diag.AppendLine("[RT2] 类型全部解析完成");
-
-        // ---- 条件用的 ModelKey：直接取 RT2 自带的常量 ----
-        object K(string nested, string field)
+        catch (Exception ex)
         {
-            var t = _rt2.GetType($"RolltheSpire2.Core.Identity.BaseGameModelKeys+{nested}", false);
-            var f = t?.GetField(field, BindingFlags.Public | BindingFlags.Static);
-            if (f == null)
-                Diag.AppendLine($"[RT2] ✗ BaseGameModelKeys+{nested}.{field} 不存在");
-            return f?.GetValue(null);
+            var inner = ex is System.Reflection.TargetInvocationException tie ? tie.InnerException ?? ex : ex;
+            _error = inner.GetType().Name + ": " + inner.Message;
+            if (inner.Message.Contains("MainThread"))
+                _error += "  ⇒ 必须把 InitializeOnMainThread 放在 Godot 主线程调用。";
+            SeedStore.Log("[RT2] 初始化异常: " + inner);
+            return false;
         }
-
-        _bonesKey = K("Relics", "NeowsBones");
-        _shearsKey = K("Relics", "PrecariousShears");
-        _leafKey = K("Relics", "NewLeaf");
-        _guiltyKey = K("Cards", "Guilty");
-        _charKey = K("Characters", Character());
-
-        Diag.AppendLine($"[RT2] key: 骨骰={_bonesKey} 羊毛剪={_shearsKey} 新叶={_leafKey} " +
-                        $"愧疚={_guiltyKey} 角色={_charKey}");
-
-        if (_bonesKey == null || _shearsKey == null || _leafKey == null || _guiltyKey == null || _charKey == null)
-            throw new InvalidOperationException(
-                "BaseGameModelKeys 里缺少必要的 key（见诊断）—— RT2 可能改了这些常量的名字或位置。");
-
-        // ---- 版本探测：★ P0 改动 ----
-        // 原来这里写死 "0.111.0"。那是很危险的：游戏升到 0.112 之后，
-        // 代码会照着【旧版本】的规则构造运行时快照 —— 结果可能静默算错，
-        // 比崩溃还糟糕（给你错的种子）。
-        //
-        // 现在改成用 RT2 自己的探测器 GameVersionDetector.Detect()（已核实 public static），
-        // 它有自己的候选路径发现逻辑（BuildCandidatePaths）。拿不到就依次回退，
-        // 全都失败就【明确报错并停止】，绝不猜。
-        GameVersion = ResolveGameVersion();
-        Diag.AppendLine($"[版本] 探测结果 = \"{GameVersion}\"");
-        // ★ 成功也要打日志 —— 之前只进 Diag 缓冲，成功时看不到，
-        //   导致"版本到底探测出什么"这个问题没法从日志确认。
-        SeedStore.Log($"[版本] 探测结果 = \"{GameVersion}\"");
-        if (!string.IsNullOrWhiteSpace(_lastVersionProbe))
-            SeedStore.Log($"[版本] 来源: {_lastVersionProbe}");
-        if (string.IsNullOrWhiteSpace(GameVersion))
-            throw new InvalidOperationException(
-                "无法探测游戏版本号。拒绝用一个猜测的版本继续（那会静默算错种子）。" +
-                "详见诊断日志。");
-
-        _detection = BuildDetection(GameVersion);
-        Diag.AppendLine($"[版本] detection = {_detection}");
-
-        _predict = _registryT.GetMethods(BindingFlags.Public | BindingFlags.Static)
-            .First(m => m.Name == "Predict" && m.GetParameters().Length == 2);
-
-        _profile = _registryT.GetMethods(BindingFlags.Public | BindingFlags.Static)
-            .First(m => m.Name == "Select" && m.GetParameters().Length == 1
-                        && m.GetParameters()[0].ParameterType == _detectionT)
-            .Invoke(null, new[] { _detection });
-        Diag.AppendLine($"[RT2] profile = {_profile?.GetType().Name}");
-
-        _charFromKey = _charIdT.GetMethod("FromKey", BindingFlags.Public | BindingFlags.Static)
-            ?? throw new InvalidOperationException("CharacterIdentity.FromKey 不存在");
-
-        _requestIdCreate = _requestIdT.GetMethod("Create", BindingFlags.Public | BindingFlags.Static)
-            ?? throw new InvalidOperationException("PredictionRequestId.Create 不存在");
-
-        _broadDefault = _ancientT.GetProperty("BroadDefault", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
-
-        _neowDomain = Enum.Parse(_domainSelT, "Neow");
-        _requestCtor = _requestT.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
-            .OrderByDescending(c => c.GetParameters().Length).First();
-        Diag.AppendLine($"[RT2] SeedPredictionRequest 参数数 = {_requestCtor.GetParameters().Length}");
     }
 
-    const string _rt2_marker = "JimiRoll";
+    // ==================================================================
+    // 版本探测
+    // ==================================================================
 
     /// <summary>
-    /// 探测到的游戏版本（规范化后的，如 "0.111.0"）。
-    /// ★ 不再是 const —— 由 <see cref="ResolveGameVersion"/> 在绑定时探测填入。
-    /// </summary>
-    static string GameVersion = "";
-
-    /// <summary>版本号是从哪一级探测到的（打日志用）。</summary>
-    static string _lastVersionProbe = "";
-
-    /// <summary>
-    /// 探测游戏版本。三级尝试，全失败返回空串（调用方会报错并停止）：
+    /// 三级探测，全失败返回空串（调用方会报错并停止）：
     /// <list type="number">
-    /// <item>RT2 自己的 <c>GameVersionDetector.Detect()</c>（首选，它自带候选路径发现）</item>
-    /// <item>游戏自己的 <c>NGame.GetGameVersion()</c></item>
-    /// <item>读游戏根目录的 <c>release_info.json</c>（由已加载程序集位置反推，不写死盘符）</item>
+    /// <item>RT2 自己的 <see cref="GameVersionDetector.Detect"/>（首选，它自带候选路径发现）</item>
+    /// <item>游戏自己的 <c>NGame.GetGameVersion()</c>（走反射 —— 那是游戏的 API）</item>
+    /// <item>游戏根目录的 <c>release_info.json</c>（路径由已加载程序集反推，不写死盘符）</item>
     /// </list>
     /// </summary>
     static string ResolveGameVersion()
@@ -225,48 +206,39 @@ internal static class Rt2Binding
         // ---- 1) RT2 的探测器 ----
         try
         {
-            var detT = _rt2!.GetType("RolltheSpire2.Compatibility.GameVersionDetector", false);
-            var detect = detT?.GetMethod("Detect", BindingFlags.Public | BindingFlags.Static);
-            if (detect != null)
+            var det = GameVersionDetector.Detect();
+            if (det != null)
             {
-                var det = detect.Invoke(null, null);
-                if (det != null)
+                if (!string.IsNullOrWhiteSpace(det.NormalizedVersion) && det.IsExact)
                 {
-                    var norm = Reflect.GetMember(det, "NormalizedVersion")?.ToString();
-                    var exact = Reflect.GetMember(det, "IsExact");
-                    Diag.AppendLine($"[版本] RT2 探测: normalized=\"{norm}\" isExact={exact} raw={Reflect.GetMember(det, "RawVersion")}");
-                    if (!string.IsNullOrWhiteSpace(norm) && (exact is not bool b || b))
-                    {
-                        _lastVersionProbe = "RT2 的 GameVersionDetector.Detect()（首选）";
-                        return norm;
-                    }
+                    VersionSource = "RT2 的 GameVersionDetector.Detect()（首选）";
+                    return det.NormalizedVersion;
                 }
+                SeedStore.Log($"[版本] RT2 探测到 normalized=\"{det.NormalizedVersion}\" " +
+                              $"isExact={det.IsExact} raw=\"{det.RawVersion}\" —— 不够精确，继续回退");
             }
-            else Diag.AppendLine("[版本] 找不到 GameVersionDetector.Detect，跳过");
         }
-        catch (Exception ex) { Diag.AppendLine("[版本] RT2 探测失败: " + ex.GetType().Name); }
+        catch (Exception ex) { SeedStore.Log("[版本] RT2 探测失败: " + ex.GetType().Name); }
 
         // ---- 2) 游戏自己的 ----
         try
         {
-            var ngT = _rt2!.GetType("MegaCrit.Sts2.Core.Nodes.NGame") ??
-                      typeof(MegaCrit.Sts2.Core.Random.Rng).Assembly.GetType("MegaCrit.Sts2.Core.Nodes.NGame", false);
-            var gv = ngT?.GetMethod("GetGameVersion", BindingFlags.Public | BindingFlags.Static | BindingFlags.NonPublic);
-            if (gv != null)
+            var ngT = typeof(MegaCrit.Sts2.Core.Random.Rng).Assembly
+                .GetType("MegaCrit.Sts2.Core.Nodes.NGame", false);
+            var gv = ngT?.GetMethod("GetGameVersion",
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static
+                | System.Reflection.BindingFlags.NonPublic);
+            var v = gv?.Invoke(null, null)?.ToString();
+            if (!string.IsNullOrWhiteSpace(v))
             {
-                var v = gv.Invoke(null, null)?.ToString();
-                Diag.AppendLine($"[版本] NGame.GetGameVersion() = \"{v}\"");
-                if (!string.IsNullOrWhiteSpace(v))
-                {
-                    _lastVersionProbe = "游戏的 NGame.GetGameVersion()";
-                    return v;
-                }
+                VersionSource = "游戏的 NGame.GetGameVersion()";
+                return v;
             }
-            else Diag.AppendLine("[版本] 找不到 NGame.GetGameVersion，跳过");
+            SeedStore.Log("[版本] NGame.GetGameVersion 不可用");
         }
-        catch (Exception ex) { Diag.AppendLine("[版本] NGame.GetGameVersion 失败: " + ex.GetType().Name); }
+        catch (Exception ex) { SeedStore.Log("[版本] NGame.GetGameVersion 失败: " + ex.GetType().Name); }
 
-        // ---- 3) release_info.json（路径由已加载程序集反推，不写死盘符） ----
+        // ---- 3) release_info.json ----
         try
         {
             var dir = Path.GetDirectoryName(typeof(MegaCrit.Sts2.Core.Random.Rng).Assembly.Location);
@@ -280,10 +252,9 @@ internal static class Rt2Binding
                         if (doc.RootElement.TryGetProperty(name, out var el))
                         {
                             var v = el.ToString();
-                            Diag.AppendLine($"[版本] release_info.json 的 {name} = \"{v}\"  ({f})");
                             if (!string.IsNullOrWhiteSpace(v))
                             {
-                                _lastVersionProbe = "游戏根目录的 release_info.json";
+                                VersionSource = $"游戏根目录 release_info.json 的 {name}";
                                 return v;
                             }
                         }
@@ -292,145 +263,50 @@ internal static class Rt2Binding
                 if (parent == dir) break;
                 dir = parent;
             }
-            Diag.AppendLine("[版本] 找不到 release_info.json 或里面没有版本字段");
+            SeedStore.Log("[版本] 找不到 release_info.json 或里面没有版本字段");
         }
-        catch (Exception ex) { Diag.AppendLine("[版本] 读 release_info.json 失败: " + ex.GetType().Name); }
+        catch (Exception ex) { SeedStore.Log("[版本] 读 release_info.json 失败: " + ex.GetType().Name); }
 
         return "";
     }
 
-    /// <summary>用探测到的版本号构造 RT2 的 GameVersionDetection（优先让 RT2 自己造）。</summary>
-    static object BuildDetection(string version)
-    {
-        // 优先：直接用 RT2 探测出来的那个 detection 对象（信息最全，带它的 Evidence/IsExact）
-        try
-        {
-            var detT = _rt2!.GetType("RolltheSpire2.Compatibility.GameVersionDetector", false);
-            var detect = detT?.GetMethod("Detect", BindingFlags.Public | BindingFlags.Static);
-            var det = detect?.Invoke(null, null);
-            if (det != null && det.GetType() == _detectionT) return det;
-        }
-        catch { }
+    static GameVersionDetection BuildDetection(string version)
+        => new GameVersionDetection(version, version, "", "JimiRoll(probed)", true, "");
 
-        // 回退：自己按 6 参构造造一个（字段名已用探针核实）
-        return _detectionT.GetConstructor(new[]
-            { typeof(string), typeof(string), typeof(string), typeof(string), typeof(bool), typeof(string) })!
-            .Invoke(new object[] { version, version, "", "JimiRoll(probed)", true, "" });
-    }
-
-    static string Character()
+    /// <summary>
+    /// 把 <c>Conditions.CharacterKey</c>（形如 <c>CHARACTER:SILENT</c>）映射到 RT2 的常量。
+    ///
+    /// RT2 的 <c>BaseGameModelKeys.Characters</c> 只有 5 个原版角色：
+    /// <c>Ironclad / Silent / Defect / Necrobinder / Regent</c>。
+    /// （观者 Watcher 是 Mod 角色，不在其中。）
+    /// 其它角色回退到 ModelKey 字符串构造 —— 那也是有效的。
+    /// </summary>
+    static ModelKey ResolveCharacterKey()
     {
-        // Conditions.CharacterKey 形如 "CHARACTER:SILENT"，转成 BaseGameModelKeys+Characters 的字段名
         var e = Conditions.CharacterKey;
         var i = e.IndexOf(':');
         var entry = i >= 0 ? e[(i + 1)..] : e;
-        var parts = entry.Split(new[] { '_' }, StringSplitOptions.RemoveEmptyEntries);
-        return string.Concat(parts.Select(p => char.ToUpperInvariant(p[0]) + p[1..].ToLowerInvariant()));
-    }
 
-    // ==================================================================
-    // 第二步：主线程抓运行时快照
-    // ==================================================================
-
-    /// <summary>
-    /// <b>必须在 Godot 主线程调用</b>（在 <c>NMainMenu._Ready</c> 里做正好）。
-    ///
-    /// 之所以必须：骨骰效果的真值来自 <c>NeowsBones.GetValidRelics(Player)</c>，
-    /// 它需要活着的 Player；而 RT2 的运行时快照抓取器有主线程守卫，
-    /// 非主线程会抛 <c>RuntimeSnapshotCaptureRequiresGodotMainThread</c>。
-    ///
-    /// 抓到的快照会被缓存下来，之后 <see cref="IsMatch"/> 可以在后台线程随便跑。
-    /// </summary>
-    public static bool InitializeOnMainThread()
-    {
-        if (_initTried && _authority != null) return true;
-        _initTried = true;
-        _error = null;
-
-        try
+        switch (entry.ToUpperInvariant())
         {
-            BindTypes();
-
-            var capT = _rt2!.GetType("RolltheSpire2.Infrastructure.Snapshots.RuntimeContextAuthorityCapture")
-                ?? throw new InvalidOperationException("找不到 RuntimeContextAuthorityCapture");
-
-            var character = _charFromKey.Invoke(null, new[] { _charKey });
-
-            // 首选 CaptureRuntimeReadOnly（含骨骰池，但必须在主线程）
-            var readOnly = capT.GetMethod("CaptureRuntimeReadOnly", BindingFlags.Public | BindingFlags.Static);
-            if (readOnly != null)
-            {
-                var ps = readOnly.GetParameters();
-                var args = new object[ps.Length];
-                for (var i = 0; i < ps.Length; i++)
-                {
-                    var n = ps[i].Name!;
-                    args[i] = n switch
-                    {
-                        "profile" => _profile,
-                        "rawSeed" => SeedCodec.Format(0),      // 这里与种子无关；骨骰池是按稀有度筛的
-                        "character" => character,
-                        "ascension" => Conditions.Ascension,
-                        "gameVersion" => GameVersion,
-                        "playersCount" => Conditions.PlayersCount,
-                        "playerSlotIndex" => 0,
-                        _ => ps[i].HasDefaultValue ? ps[i].DefaultValue : null,
-                    };
-                }
-
-                try
-                {
-                    _authority = readOnly.Invoke(null, args);
-                    Diag.AppendLine("[authority] 用 CaptureRuntimeReadOnly 成功（含骨骰池）");
-                }
-                catch (TargetInvocationException tie)
-                {
-                    var inner = tie.InnerException ?? tie;
-                    Diag.AppendLine($"[authority] CaptureRuntimeReadOnly 失败: {inner.GetType().Name}: {inner.Message}");
-                    _error = "抓运行时快照失败（是否不在主线程？）: " + inner.Message;
-                    if (_error.Contains("MainThread"))
-                        _error += "\n  ⇒ 把 Rt2Binding.InitializeOnMainThread() 放到 Godot 主线程调用（例如 NMainMenu._Ready）。";
-                    return false;
-                }
-            }
-
-            if (_authority == null)
-            {
-                _error = "拿不到 RuntimeContextAuthoritySnapshot";
-                return false;
-            }
-
-            // 确认骨骰池在不在（这决定 BonesOutcome 能不能算出来）
-            var ea = Reflect.GetMember(_authority, "EffectAuthority");
-            var bonesPool = ea != null ? Reflect.GetMember(ea, "BonesEligibleRelics") : null;
-            var hasExact = ea != null ? Reflect.GetMember(ea, "HasExactBonesPools", false) : false;
-            var poolCount = bonesPool is System.Collections.IEnumerable en
-                ? en.Cast<object>().Count(x => x != null) : 0;
-
-            Diag.AppendLine($"[authority] BonesEligibleRelics = {poolCount} 个  HasExactBonesPools = {hasExact}");
-
-            if (poolCount == 0)
-            {
-                _error = "快照里 BonesEligibleRelics 是空的 —— 骨骰条件无法判定。" +
-                         "（骨骰池来自 NeowsBones.GetValidRelics(Player)，需要活着的 Player；" +
-                         "确认是在主线程、且游戏已完成初始化。）";
-                return false;
-            }
-
-            Diag.AppendLine("[authority] ✓ 就绪");
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _error = ex.GetType().Name + ": " + ex.Message;
-            Diag.AppendLine("[RT2] 初始化异常: " + ex);
-            return false;
+            case "IRONCLAD": return BaseGameModelKeys.Characters.Ironclad;
+            case "SILENT": return BaseGameModelKeys.Characters.Silent;
+            case "DEFECT": return BaseGameModelKeys.Characters.Defect;
+            case "NECROBINDER": return BaseGameModelKeys.Characters.Necrobinder;
+            case "REGENT": return BaseGameModelKeys.Characters.Regent;
+            default:
+                SeedStore.Log($"[RT2] 角色 \"{Conditions.CharacterKey}\" 不是 5 个原版角色之一，" +
+                              $"回退到 ModelKey 字符串构造");
+                return new ModelKey("CHARACTER", entry);
         }
     }
 
     // ==================================================================
-    // 第三步：判定（任意线程）
+    // 第二步：判定（任意线程）
     // ==================================================================
+
+    static ModelKey _bonesKey, _shearsKey, _leafKey, _guiltyKey, _charKey;
+    static CharacterIdentity _character;
 
     /// <summary>判定。返回的 <paramref name="evidence"/> 由调用方自己持有，不受其它线程影响。</summary>
     public static bool IsMatch(string seed, out string evidence)
@@ -440,23 +316,19 @@ internal static class Rt2Binding
 
         try
         {
-            var doc = Predict(seed);
-            if (doc == null) { evidence = "Predict 返回 null"; return false; }
-
-            var choice = FindBonesChoice(doc);
+            var choice = FindBonesChoice(seed);
             if (choice == null) { evidence = "Neow 未给骨骰"; return false; }
 
-            var bones = Reflect.GetMember(choice, "BonesOutcome");
+            var bones = choice.BonesOutcome;
             if (bones == null)
             {
                 evidence = "骨骰选项没有 BonesOutcome（快照缺骨骰池）";
                 return false;
             }
 
-            var offered = (Reflect.GetMember(bones, "OfferedRelics") as System.Collections.IEnumerable)?
-                .Cast<object>().Where(x => x != null).ToList() ?? new List<object>();
-
-            var summary = "骨骰给出[" + string.Join("+", offered.Select(x => x.ToString())) + "]";
+            var offered = bones.OfferedRelics ?? (IReadOnlyList<ModelKey>)Array.Empty<ModelKey>();
+            // ModelKey 是 struct，不用 `?.`
+            var summary = "骨骰给出[" + string.Join("+", offered.Select(k => k.ToString())) + "]";
 
             if (offered.Count != 2) { evidence = summary + " —— 不是两个遗物"; return false; }
             if (!offered.Any(k => KeyEq(k, _shearsKey))) { evidence = summary + " —— 缺松动羊毛剪"; return false; }
@@ -473,7 +345,9 @@ internal static class Rt2Binding
         }
     }
 
-    /// <summary>兼容旧签名（内部仍走线程静态 _evidence）。</summary>
+    /// <summary>兼容旧签名（内部仍走线程静态）。</summary>
+    [ThreadStatic] static string _evidence;
+    public static string LastEvidence => _evidence ?? "";
     public static bool IsMatch(string seed)
     {
         var ok = IsMatch(seed, out var ev);
@@ -481,75 +355,146 @@ internal static class Rt2Binding
         return ok;
     }
 
-    static object Predict(string seed)
+    static NeowChoiceResult FindBonesChoice(string seed)
     {
-        var character = _charFromKey.Invoke(null, new[] { _charKey });
+        var doc = Predict(seed);
+        if (doc?.Sections == null) return null;
+
+        foreach (var sec in doc.Sections)
+        {
+            if (sec == null || sec.Kind != PredictionSectionKind.NeowIdentity) continue;
+            if (sec.NeowChoices == null) continue;
+            foreach (var c in sec.NeowChoices)
+                if (c != null && KeyEq(c.RelicKey, _bonesKey)) return c;
+        }
+        return null;
+    }
+
+    // ==================================================================
+    // SeedPredictionRequest 的构造 —— ★ 本文件唯一必须用反射的地方
+    // ==================================================================
+
+    static System.Reflection.ConstructorInfo _requestCtor;
+    static string _requestCtorError;
+
+    /// <summary>
+    /// 构造 <c>SeedPredictionRequest</c>。
+    ///
+    /// ⚠️ <b>为什么这里必须用反射（已核实，不是偷懒）</b>：
+    /// 该构造函数的第 13 个参数类型是
+    /// <c>RolltheSpire2.Core.Prediction.TrustedRootHashInput</c>，而它是 <b>internal</b>。
+    /// 参数类型 internal ⇒ 构造函数对外不可见 ⇒ <b>编译期根本没法调用</b>
+    /// （编译器报 CS1729「不包含采用 14 个参数的构造函数」）。
+    ///
+    /// 所以这是 P3 里唯一保留的反射点。为了不让它"静默失效"：
+    /// <list type="bullet">
+    /// <item>启动时校验构造函数存在、参数个数正确，不满足就<b>明确报错并停止搜索</b></item>
+    /// <item>参数<b>按名字</b>匹配填入，而不是按位置 —— RT2 调顺序也不会传错值</item>
+    /// </list>
+    /// 其余所有 RT2 API 都是编译期强类型引用。
+    /// </summary>
+    static SeedPredictionRequest BuildRequest(string seed)
+    {
+        if (_requestCtor == null)
+            throw new InvalidOperationException("SeedPredictionRequest 构造函数未就绪: " + _requestCtorError);
 
         var ps = _requestCtor.GetParameters();
         var args = new object[ps.Length];
         for (var i = 0; i < ps.Length; i++)
         {
-            var n = ps[i].Name!;
+            var n = ps[i].Name ?? "";
             args[i] = n switch
             {
-                "requestId" => _requestIdCreate.Invoke(null, null),
+                "requestId" => PredictionRequestId.Create(),
                 "originalSeed" => seed,
-                "character" => character,
+                "character" => _character,
                 "ascension" => Conditions.Ascension,
                 "playersCount" => Conditions.PlayersCount,
                 "playerSlotIndex" => 0,
                 "authority" => _authority,
-                "ancientOptionConditions" => _broadDefault,
-                "domains" => _neowDomain,
+                "ancientOptionConditions" => AncientOptionConditionProfile.BroadDefault,
+                "domains" => SeedPredictionDomainSelection.Neow,
                 "relicSequencePreviewCount" => 0,
                 "includeDiagnostics" => false,
                 "enableComplexBonesDeckInteractions" => true,
+                // 下面两个就是"必须用反射"的原因所在：类型 internal / 我们不需要
+                "trustedRootHashInput" => null,
+                "normalCombatRewardProjectionRequest" => null,
                 _ => ps[i].HasDefaultValue ? ps[i].DefaultValue : null,
             };
         }
 
-        // ★ 串行化：RT2 的 Predict 内部有共享缓存/状态，多线程并发调用是结果不可信的隐患。
-        //   实测瓶颈本来就在这一层（流水线整体 46 万种子/秒 ≈ 单线程 Predict 的吞吐），
-        //   所以加锁【不损失任何性能】，却能把整类并发风险直接消掉。
-        lock (PredictGate)
+        var obj = _requestCtor.Invoke(args);
+        return (SeedPredictionRequest)obj;
+    }
+
+    /// <summary>启动时校验那个反射点，不满足就报错（而不是运行时静默失败）。</summary>
+    static bool ValidateRequestCtor()
+    {
+        try
         {
-            return _predict.Invoke(null, new[] { _detection, _requestCtor.Invoke(args) });
+            var ctors = typeof(SeedPredictionRequest).GetConstructors(
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic
+                | System.Reflection.BindingFlags.Instance);
+
+            // 选参数最多的那个（真实的那个有 14 个参数）
+            _requestCtor = ctors.OrderByDescending(c => c.GetParameters().Length).FirstOrDefault();
+
+            if (_requestCtor == null)
+            {
+                _requestCtorError = "找不到任何构造函数";
+                return false;
+            }
+
+            var ps = _requestCtor.GetParameters();
+            // 必须有的参数名（缺一个就说明 RT2 改签名了）
+            var required = new[]
+            {
+                "requestId", "originalSeed", "character", "ascension", "playersCount", "playerSlotIndex",
+                "authority", "ancientOptionConditions", "domains",
+            };
+            var names = ps.Select(p => p.Name).ToHashSet();
+            var missing = required.Where(r => !names.Contains(r)).ToArray();
+            if (missing.Length > 0)
+            {
+                _requestCtorError = "构造函数的参数名对不上，缺少: " + string.Join(", ", missing) +
+                                    "（实际参数: " + string.Join(", ", ps.Select(p => p.Name)) + "）";
+                return false;
+            }
+
+            SeedStore.Log($"[RT2] SeedPredictionRequest 构造函数 ✓（{ps.Length} 个参数，按名字匹配）");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _requestCtorError = ex.GetType().Name + ": " + ex.Message;
+            return false;
         }
     }
 
-    /// <summary>在 NeowIdentity 段里找 RelicKey == 骨骰 的那个选项。</summary>
-    static object FindBonesChoice(object doc)
+    static SeedPredictionDocument Predict(string seed)
     {
-        if (Reflect.GetMember(doc, "Sections") is not System.Collections.IEnumerable sections) return null;
+        var request = BuildRequest(seed);
 
-        foreach (var sec in sections)
+        // 串行化：RT2 的 Predict 内部有共享缓存，并发调用是结果不可信的隐患。
+        lock (PredictGate)
         {
-            if (sec == null) continue;
-            if (Reflect.GetMember(sec, "Kind")?.ToString() != "NeowIdentity") continue;
-
-            if (Reflect.GetMember(sec, "NeowChoices") is not System.Collections.IEnumerable choices) continue;
-            foreach (var c in choices)
-            {
-                if (c == null) continue;
-                if (KeyEq(Reflect.GetMember(c, "RelicKey"), _bonesKey)) return c;
-            }
+            return RuntimeProfileRegistry.Predict(_detection, request);
         }
-        return null;
     }
 
     /// <summary>诅咒：在 EffectGroups 里找 Kind=AddCard 且 Target=Guilty。</summary>
-    static bool HasCurse(object choice, object target)
+    static bool HasCurse(NeowChoiceResult choice, ModelKey target)
     {
-        if (Reflect.GetMember(choice, "EffectGroups") is not System.Collections.IEnumerable groups) return false;
-        foreach (var g in groups)
+        if (choice.EffectGroups == null) return false;
+        foreach (var g in choice.EffectGroups)
         {
-            if (g == null) continue;
-            if (Reflect.GetMember(g, "OrderedItems") is not System.Collections.IEnumerable items) continue;
-            foreach (var it in items)
+            if (g?.OrderedItems == null) continue;
+            foreach (var item in g.OrderedItems)
             {
-                if (it == null) continue;
-                if (Reflect.GetMember(it, "Kind")?.ToString() == "AddCard"
-                    && KeyEq(Reflect.GetMember(it, "TargetKey"), target))
+                if (item == null) continue;
+                // item.TargetKey 是 Nullable<ModelKey>（因为 ModelKey 是 struct）
+                if (item.Kind == PredictedEffectKind.AddCard && KeyEqOpt(item.TargetKey, target))
                     return true;
             }
         }
@@ -557,11 +502,10 @@ internal static class Rt2Binding
     }
 
     /// <summary>用 Serialized 比较 ModelKey（不依赖它的 Equals 实现）。</summary>
-    static bool KeyEq(object a, object b)
-    {
-        if (a == null || b == null) return false;
-        var sa = Reflect.GetMember(a, "Serialized")?.ToString() ?? a.ToString();
-        var sb = Reflect.GetMember(b, "Serialized")?.ToString() ?? b.ToString();
-        return string.Equals(sa, sb, StringComparison.OrdinalIgnoreCase);
-    }
+    static bool KeyEq(ModelKey a, ModelKey b)
+        => string.Equals(a.Serialized, b.Serialized, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary><c>Nullable&lt;ModelKey&gt;</c> 版本。</summary>
+    static bool KeyEqOpt(ModelKey? a, ModelKey b)
+        => a.HasValue && KeyEq(a.Value, b);
 }

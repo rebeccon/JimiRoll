@@ -123,7 +123,6 @@ public static class MainFile
         SeedStore.Log("RT2 接线状态: " + Rt2Binding.Status);
         if (!rt2Ok)
         {
-            SeedStore.Log("RT2 诊断:\n" + Rt2Binding.Diagnostics);
             SeedStore.Log("⇒ 骨骰的遗物/诅咒判定依赖运行时快照，拿不到就无法筛种。");
             return false;
         }

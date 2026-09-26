@@ -34,8 +34,10 @@ internal static class GameInterop
     static string _failure;
     static readonly object Gate = new();
 
-    static MethodInfo _getDeterministicHashCode;   // StringHelper.GetDeterministicHashCode(string) -> ulong
-    static ulong? _domainHash;                     // GetDeterministicHashCode("act_1_map")
+    // ★ P3：不再用反射 —— StringHelper.GetDeterministicHashCode 已核实是 public static，
+    //   直接调用即可，写错名字会编译不过。
+    static ulong _domainHash;
+    static bool _domainHashReady;
 
     public static bool Ready { get { Ensure(); return _ready; } }
     public static string Failure { get { Ensure(); return _failure; } }
@@ -53,21 +55,9 @@ internal static class GameInterop
 
     static void Bind()
     {
-        var helper = typeof(Rng).Assembly.GetType("MegaCrit.Sts2.Core.Helpers.StringHelper", false)
-            ?? throw new InvalidOperationException("找不到 MegaCrit.Sts2.Core.Helpers.StringHelper");
-
-        _getDeterministicHashCode = helper.GetMethod(
-            "GetDeterministicHashCode",
-            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static,
-            null, new[] { typeof(string) }, null)
-            ?? throw new InvalidOperationException("找不到 StringHelper.GetDeterministicHashCode(string)");
-
-        if (_getDeterministicHashCode.ReturnType != typeof(ulong))
-            throw new InvalidOperationException(
-                $"GetDeterministicHashCode 返回 {_getDeterministicHashCode.ReturnType}，期望 UInt64");
-
-        // 立刻取一次域名哈希，顺便验证绑定可用
-        _domainHash = (ulong)_getDeterministicHashCode.Invoke(null, new object[] { Act1MapDomain });
+        // 立刻取一次域名哈希，顺便验证调用可用
+        _domainHash = StringHelper.GetDeterministicHashCode(Act1MapDomain);
+        _domainHashReady = true;
     }
 
     // ------------------------------------------------------------------
@@ -79,7 +69,7 @@ internal static class GameInterop
     {
         Ensure();
         if (!_ready) throw new InvalidOperationException("GameInterop 未就绪: " + _failure);
-        return (ulong)_getDeterministicHashCode.Invoke(null, new object[] { seed });
+        return StringHelper.GetDeterministicHashCode(seed);
     }
 
     /// <summary>
@@ -145,7 +135,7 @@ internal static class GameInterop
     {
         Ensure();
         if (!_ready) throw new InvalidOperationException("GameInterop 未就绪: " + _failure);
-        return RunRngSeed(seed) + _domainHash.Value;
+        return RunRngSeed(seed) + _domainHash;
     }
 
     /// <summary>
