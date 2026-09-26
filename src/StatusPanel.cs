@@ -124,7 +124,9 @@ internal static class StatusPanel
 
             // ★★ 必须在 AddChild 之前 —— 见类注释 ①
             label.AddThemeFontOverride(ThemeConstants.Label.Font, font);
+            // 双保险：游戏的常量名 + Godot 原生的 "font_size"（名字万一不一样也不至于失控）
             label.AddThemeFontSizeOverride(ThemeConstants.Label.FontSize, Settings.Current.PanelFontSize);
+            label.AddThemeFontSizeOverride("font_size", Settings.Current.PanelFontSize);
             label.AddThemeColorOverride(ThemeConstants.Label.FontColor, new Color(1.00f, 0.93f, 0.60f));   // 淡金，和游戏 UI 区分开
             label.MouseFilter = Control.MouseFilterEnum.Ignore;
             label.ZIndex = 100;    // 保证画在最上层

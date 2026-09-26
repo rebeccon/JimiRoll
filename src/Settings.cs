@@ -55,7 +55,7 @@ internal sealed class SettingsData
     public bool ShowStatusPanel { get; set; } = true;
 
     /// <summary>状态面板的字号。</summary>
-    public int PanelFontSize { get; set; } = 22;
+    public int PanelFontSize { get; set; } = 12;
 }
 
 /// <summary>
@@ -189,7 +189,7 @@ internal static class Settings
         { notes.Add("CharacterKey 为空 → CHARACTER:SILENT"); d.CharacterKey = "CHARACTER:SILENT"; }
 
         if (d.PanelFontSize < 8 || d.PanelFontSize > 96)
-        { notes.Add($"PanelFontSize={d.PanelFontSize} → 22"); d.PanelFontSize = 22; }
+        { notes.Add($"PanelFontSize={d.PanelFontSize} → 12"); d.PanelFontSize = 12; }
 
         if (notes.Count > 0)
             SeedStore.Log("[设置] 有以下值不合理，已自动纠正：\n  - " + string.Join("\n  - ", notes));
