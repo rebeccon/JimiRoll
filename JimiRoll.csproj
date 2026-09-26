@@ -1,9 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!-- ============================================================
-       JimiRoll —— 固定条件快速筛种（依赖 RolltheSpire2）
+       JimiRoll —— 固定条件快速筛种
+       ★ v2.0.0 起【不依赖任何第三方模组】（RolltheSpire2 已完全去掉）。
        纯代码 Mod：无 Godot、无 pck、不注册任何 UI。
-       构建方式照抄 AllCardsPurge（已验证可行）。
        ============================================================ -->
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
@@ -18,20 +18,16 @@
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <NoWarn>CS0168;CS0219;CS8600;CS8602;CS8603;CS8604;CS8618</NoWarn>
     <!--
-      ★ 注意：这几个路径只影响【编译】，不会进入 dll，也不影响【运行】。
-        运行时那份写死的路径已经在 P0 里全部删掉了
-        （GameInterop / Rt2Binding 都改成从已加载程序集里取）。
+      ★ 注意：这个路径只影响【编译】，不会进入 dll，也不影响【运行】。
+        运行时那份写死的路径已经在 P0 里全部删掉了（GameInterop 从已加载程序集里取）。
         所以发布出去的包里不含任何盘符。
 
       换机器 / 换盘时，用环境变量覆盖即可，不用改文件：
         $env:STS2_GAME_DIR = "E:\Steam\steamapps\common\Slay the Spire 2"
-        $env:STS2_RT2_DIR  = "E:\Steam\steamapps\workshop\content\2868840\3755166888\RolltheSpire2"
     -->
     <GameDir Condition="'$(GameDir)' == '' AND '$(STS2_GAME_DIR)' != ''">$(STS2_GAME_DIR)</GameDir>
     <GameDir Condition="'$(GameDir)' == ''">D:\steam\steamapps\common\Slay the Spire 2</GameDir>
     <GameDataDir>$(GameDir)\data_sts2_windows_x86_64</GameDataDir>
-    <Rt2Dir Condition="'$(Rt2Dir)' == '' AND '$(STS2_RT2_DIR)' != ''">$(STS2_RT2_DIR)</Rt2Dir>
-    <Rt2Dir Condition="'$(Rt2Dir)' == ''">D:\steam\steamapps\workshop\content\2868840\3755166888\RolltheSpire2</Rt2Dir>
     <ModsDir>$(GameDir)\mods\JimiRoll</ModsDir>
   </PropertyGroup>
 
@@ -50,13 +46,9 @@
       <HintPath>$(GameDataDir)\GodotSharp.dll</HintPath>
       <Private>false</Private>
     </Reference>
-    <!-- RolltheSpire2：编译期引用它的 public 搜索 API。
-         若你不想在编译期依赖它，可把下面这段注释掉 —— 代码里所有 RT2 访问都走反射，
-         编译期引用只是为了方便 IDE 补全与类型检查。 -->
-    <Reference Include="RolltheSpire2">
-      <HintPath>$(Rt2Dir)\RolltheSpire2.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
+    <!-- ★ v2.0.0：RolltheSpire2 的引用已删除。
+         骨骰判定现在是自研的（src/NeowPredict.cs），
+         已与 RT2 在 10 万个种子上对拍一致率 100.0000%。 -->
   </ItemGroup>
 
   <!-- 编译后自动部署。加 -p:SkipDeploy=true 可只编译不部署。 -->

@@ -159,10 +159,10 @@ internal static class NeowPredict
 
         var targets = Conditions.RequiredBonesRelics;      // RELIC:PRECARIOUS_SHEARS / RELIC:NEW_LEAF
         var relicOk = relics.Count == 2
-                      && targets.All(t => relics.Any(r => NameIs(r, t)));
+                      && targets.All(t => relics.Any(r => BareName(r) == BareName(t)));
 
         var curseName = Conditions.RequiredFinalCurseKey;  // CARD:GUILTY
-        var curseOk = curse != null && NameIs(curse, curseName);
+        var curseOk = curse != null && BareName(curse) == BareName(curseName);
 
         var detail = $"骨骰给出[{string.Join("+", relics.Select(r => "RELIC:" + r))}] + 诅咒={curse}";
 
@@ -193,9 +193,33 @@ internal static class NeowPredict
         var picked = pool.Take(2).ToList();
 
         // ---- ③ 诅咒：RunRngSet.Niche ----
-        var niche = new RunRngSet(seed).Niche;
-        var curseCard = niche.NextItem(_cursePool);
-        var curse = curseCard?.Id.Entry;
+        //      ★ 注释里这个守卫不是为了生产环境（生产环境一定已有池子），
+        //        而是为了让【遗物那一半可以离线单独验证】——
+        //        离线没有 ModelDb，池子建不出来；此时返回 null 诅咒，
+        //        遗物结果仍然完全有效（两条流互不干扰）。
+        string curse = null;
+        if (_cursePool != null)
+        {
+            var niche = new RunRngSet(seed).Niche;
+
+            // ★★ 前置消耗 = 1 ★★
+            //   实测结论（_tools/BonesProbe hypo，14 个游戏内实测命中种子全中）：
+            //   Niche 在骨骰抽取诅咒之前【已经被消耗过一次】。
+            //   用 skipCurses=0 时 14 个种子只有 1 个对（纯随机水平），
+            //   改成 1 之后 14/14 全中。
+            //
+            //   而且 5 种抽取类型（NextInt/NextBool/NextDouble/…）给出完全相同的
+            //   结果 ⇒ MegaRandom 的每次 Next 固定消耗一个 u64，所以「消耗 1 次」
+            //   与「消耗什么」无关，这个实现是稳定的。
+            //
+            //   至于"那一次是谁消耗的"：用探针扫过所有读 Niche 的地方
+            //   （CombatState.CreateCreature / 各种遗物效果 / CursedRun 等），
+            //   没有一个是开局阶段跑的 —— 所以只能实测钉死，不去猜。
+            niche.NextInt(0, 2);
+
+            var curseCard = niche.NextItem(_cursePool);
+            curse = curseCard?.Id.Entry;
+        }
 
         return (picked, curse);
     }
@@ -204,21 +228,31 @@ internal static class NeowPredict
     // 名字比对：类名（PrecariousShears）↔ key（RELIC:PRECARIOUS_SHEARS）
     // ==================================================================
 
-    /// <summary>忽略前缀、大小写、下划线和分隔符。</summary>
-    static bool NameIs(string actual, string wanted)
-        => Norm(actual) == Norm(wanted);
-
+    /// <summary>忽略前缀、大小写、下划线和分隔符，只留下纯字母数字。</summary>
     static string Norm(string s)
     {
         if (string.IsNullOrEmpty(s)) return "";
         var sb = new System.Text.StringBuilder(s.Length);
         foreach (var ch in s)
-        {
-            if (ch == '_' || ch == ':' || ch == '.' || ch == ' ' || ch == '-') continue;
-            sb.Append(char.ToUpperInvariant(ch));
-        }
-        // 去掉常见前缀，比如 RELIC:/CARD: 已由上面的 ':' 处理
+            if (char.IsLetterOrDigit(ch)) sb.Append(char.ToUpperInvariant(ch));
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// 剥掉 <c>RELIC:</c> / <c>CARD:</c> 这类类别前缀和 <c>_</c>，得到纯名字。
+    /// <c>"RELIC:PRECARIOUS_SHEARS"</c> 和类名 <c>"PrecariousShears"</c> 都要归一成
+    /// <c>"PRECARIOUSSHEARS"</c>。
+    ///
+    /// ⚠️ 这个函数是<b>踩过坑</b>的：第一版只去掉了 <c>_ : . -</c> 却<b>没去掉
+    /// <c>RELIC</c> 前缀</b>，于是 <c>"RELICPRECARIOUSSHEARS" != "PRECARIOUSSHEARS"</c>，
+    /// 13 个种子全部被判「遗物不对」—— 而日志里明明打印着正确的遗物。
+    /// 教训：判定失败时一定要把"它实际算出了什么"打出来，否则会误判成逻辑错。
+    /// </summary>
+    static string BareName(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return "";
+        var i = s.LastIndexOfAny(new[] { ':', '.', '/' });
+        return Norm(i >= 0 ? s[(i + 1)..] : s);
     }
 
     // ==================================================================

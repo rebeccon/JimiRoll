@@ -8,9 +8,73 @@
 
 ### 计划中
 - P6：发布前验证清单 + GitHub
-- i18n：日志消息的中英双语（**基础设施已就位**，见下）
 
 详见 `docs/正式化方案.md`。
+
+---
+
+## [2.0.0] - 2026-09-27
+
+### ★★★ 不再依赖任何第三方模组 —— RolltheSpire2 已完全去掉 ★★★
+
+这是本项目最大的一次改动。骨骰判定整套自研实现（`src/NeowPredict.cs`），
+`csproj` 的 `RolltheSpire2` 引用与 manifest 的 `dependencies` 都已删除，
+**DLL 里已经搜不到 `RolltheSpire2` 这个字符串**。
+
+#### 自研的四条判定链（全部逐条 IL 反汇编实证）
+
+| # | 条件 | 依据 |
+|---|---|---|
+| ① | 涅奥是否给出骨骰 | `EventModel+<BeginEvent>d__28::MoveNext` 里 `set_Rng(new Rng(RunRngSet.Seed + slotIndex + hash("NEOW")))`；`Neow.GenerateInitialOptions` 第一次 `NextItem(CurseOptions)` 抽到的就是那个"特殊选项"；骨骰在 `CurseOptions` 里 ⇒ 抽到它 = 给出骨骰 |
+| ② | 骨骰给的两个遗物 | `NeowsBones.AfterObtained`: `PlayerRng.Rewards.Shuffle(pool).Take(2)`（Fisher-Yates） |
+| ③ | 骨骰给的诅咒 | 同处: `RunRngSet.Niche.NextItem(CurseCardPool 过滤+排序后的列表)`，**前置消耗 1 次** |
+| ④ | 第一章问号数 | 早已自研（`act_1_map` 域） |
+
+#### 遗物池 = 28 个，顺序至关重要
+
+`Neow.AllPossibleOptions` = `CurseOptions(10) + PositiveOptions(14) + 单例(6)` = 30，
+减去 `NeowsBones` 自己，再减去 `MassiveScroll`（它的 `IsAllowed` 是 `players.Count > 1`，
+多人专属）⇒ **28**，与游戏内实测的 `BonesEligibleRelics = 28` 完全吻合。
+
+#### 验证（全部可复现）
+
+| 验证 | 结果 |
+|---|---|
+| 条件①：自研 vs RT2，200,000 个种子 | **一致率 100.0000%** |
+| 条件①：**已上线的 JimiRoll.dll** vs RT2，100,000 个种子 | **一致率 100.0000%** |
+| 条件②：13 个游戏内实测命中种子 | **13/13 通过** |
+| 条件②③：假设搜索 14 个地面真值种子 | **14/14 全中**（`skipRelics=0`, `skipCurses=1`） |
+| 条件②宏观命中率 200,000 种子 | 0.289%（理论 0.2646%，同量级） |
+| **干净环境验收（无 RT2）** | **启动 / 自检 / 搜索 / 命中 / 填种子框 / 状态面板 全部正常** |
+
+#### 施工中踩的三个坑（都写进代码注释了）
+
+1. **`CardModel.CanBeGeneratedByModifiers` 是属性不是方法**（编不过才发现）。
+2. **归一化比对漏了前缀**：`"RELIC:PRECARIOUS_SHEARS"` 必须能匹配类名
+   `"PrecariousShears"`，第一版只去了 `_:.-` 却没去 `RELIC`，导致 13 个种子
+   全被判「遗物不对」——**而日志里明明打印着正确的遗物**。
+   ⇒ 教训：判定失败时必须把"它实际算出了什么"打出来。
+3. **`skipCurses` 从没被真正确定过**：早期假设搜索的诅咒池只有 1 个元素，
+   那条搜索是**空的**。直到进游戏跑起来，日志同时给出了真实诅咒池（10 张）
+   和"13 个种子只有 1 个对"（纯随机水平），才发现 Niche 流前置消耗其实是 **1**。
+   ⇒ 这正是内置自检存在的意义：**它把两个潜伏的 bug 都当场抓住了。**
+
+#### 新增
+
+- `src/NeowPredict.cs` —— 自研骨骰判定（含内置自检：13 个游戏内实测命中种子）
+- 自检失败时**拒绝启动搜索**（宁可不能用，也绝不给出错种子）
+
+#### 新增的开发工具（不随模组发布）
+
+- `_tools/BonesProbe/` —— 独立对拍工具（刻意不引用 RT2）
+- `_tools/rt2_recon.ps1` —— 一条命令把全部需要的 IL 打出来
+- `_tools/QnProbe` 新增 `bonescmp` / `bonesentry` / `jimicmp` / `jimirelic` 四条对拍命令
+
+#### 兼容性
+
+`docs/去RT2化方案.md` 第七节分析了跨游戏版本的行为。
+一句话：自研之后，**跨版本风险只剩「第一章问号数的 `act_1_map` 域参数」这一条良性风险**
+（错了只会少算几个种子），而且它是**可以自己跟进的**，不再受第三方模组是否更新制约。
 
 ---
 

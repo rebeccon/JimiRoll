@@ -2,7 +2,7 @@
 
 > 也许是最基米的roll种器喵
 
-需要第三方模组 **[RolltheSpire2](https://steamcommunity.com/sharedfiles/filedetails/?id=3755166888)**（作者 FalseOcean）。
+**不需要任何其它模组。** 装它自己就能用（v2.0.0 起已彻底去掉对 RolltheSpire2 的依赖）。
 
 ---
 
