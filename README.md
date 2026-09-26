@@ -13,7 +13,7 @@
 | 开局 | 涅奥骨骰（`NeowsBones`） |
 | 骨骰给出的两个遗物 | 松动羊毛剪 `PrecariousShears` + 新叶 `NewLeaf` |
 | 最终诅咒 | 愧疚 `Guilty` |
-| 第一章问号房间 | ≥ 12 个 |
+| 第一章问号房间 | ≥ 14 个 |
 | 角色 / 难度 | 沉默猎手 / 进阶 10 |
 
 ---
@@ -138,7 +138,7 @@
 ```jsonc
 {
   "ReserveCapacity": 15,          // 储备池容量（恒定维持这个数量）
-  "MinUnknownRooms": 12,          // 第一章问号房间门槛（只可能 10~14）
+  "MinUnknownRooms": 14,          // 第一章问号房间门槛（只可能 10~14；14 就是"最多"）
   "RequireExactUnknownRooms": false,  // false = ≥，true = 必须恰好等于
   "CharacterKey": "CHARACTER:SILENT",
   "Ascension": 10,
@@ -148,7 +148,7 @@
   "LogLevel": "Info",             // Debug / Info / Warn / Error / Off
   "LogLanguage": "",              // zh / en；留空则跟随游戏语言
   "ShowStatusPanel": true,        // 是否显示「自定义开局」界面上的状态小面板
-  "PanelFontSize": 22             // 面板字号
+  "PanelFontSize": 10             // 面板字号
 }
 ```
 

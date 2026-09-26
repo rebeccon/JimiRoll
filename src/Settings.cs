@@ -15,7 +15,7 @@ internal sealed class SettingsData
     public int ReserveCapacity { get; set; } = 15;
 
     /// <summary>第一章问号房间的门槛。</summary>
-    public int MinUnknownRooms { get; set; } = 12;
+    public int MinUnknownRooms { get; set; } = 14;
 
     /// <summary>true = 必须恰好等于门槛；false = 大于等于。</summary>
     public bool RequireExactUnknownRooms { get; set; } = false;
@@ -55,7 +55,7 @@ internal sealed class SettingsData
     public bool ShowStatusPanel { get; set; } = true;
 
     /// <summary>状态面板的字号。</summary>
-    public int PanelFontSize { get; set; } = 12;
+    public int PanelFontSize { get; set; } = 10;
 }
 
 /// <summary>
@@ -171,7 +171,7 @@ internal static class Settings
         { notes.Add($"ReserveCapacity={d.ReserveCapacity} → 15"); d.ReserveCapacity = 15; }
 
         if (d.MinUnknownRooms < 10 || d.MinUnknownRooms > 14)
-        { notes.Add($"MinUnknownRooms={d.MinUnknownRooms} → 12（游戏取值范围只可能是 10~14）"); d.MinUnknownRooms = 12; }
+        { notes.Add($"MinUnknownRooms={d.MinUnknownRooms} → 14（游戏取值范围只可能是 10~14）"); d.MinUnknownRooms = 14; }
 
         if (d.MaxRunMinutes < 1 || d.MaxRunMinutes > 60)
         { notes.Add($"MaxRunMinutes={d.MaxRunMinutes} → 3"); d.MaxRunMinutes = 3; }
@@ -189,7 +189,7 @@ internal static class Settings
         { notes.Add("CharacterKey 为空 → CHARACTER:SILENT"); d.CharacterKey = "CHARACTER:SILENT"; }
 
         if (d.PanelFontSize < 8 || d.PanelFontSize > 96)
-        { notes.Add($"PanelFontSize={d.PanelFontSize} → 12"); d.PanelFontSize = 12; }
+        { notes.Add($"PanelFontSize={d.PanelFontSize} → 10"); d.PanelFontSize = 10; }
 
         if (notes.Count > 0)
             SeedStore.Log("[设置] 有以下值不合理，已自动纠正：\n  - " + string.Join("\n  - ", notes));

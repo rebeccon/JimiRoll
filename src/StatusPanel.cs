@@ -122,9 +122,19 @@ internal static class StatusPanel
 
             var label = new MegaLabel { Name = NodeName };
 
+            // ★★★ 必须关掉 MegaLabel 的自动缩放，否则我们设的字号会被踩掉 ★★★
+            //   MegaLabel..ctor() 里 _autoSizeEnabled = true、_minFontSize = 8、_maxFontSize = 100，
+            //   而 MegaLabel..cctor() 已经把静态 _cachedParagraph new 出来了（不是 null）——
+            //   于是 _Ready() 里的 AdjustFontSize() 两个早退条件都不成立，它会
+            //   【按矩形把字号自动缩放到 8~100 之间】，把我们 AddThemeFontSizeOverride 设的值覆盖掉。
+            //   实测表现：把 PanelFontSize 从 22 改到 12，界面上几乎看不出差别。
+            label.AutoSizeEnabled = false;
+            label.MinFontSize = Settings.Current.PanelFontSize;
+            label.MaxFontSize = Settings.Current.PanelFontSize;
+
             // ★★ 必须在 AddChild 之前 —— 见类注释 ①
             label.AddThemeFontOverride(ThemeConstants.Label.Font, font);
-            // 双保险：游戏的常量名 + Godot 原生的 "font_size"（名字万一不一样也不至于失控）
+            // 双保险：游戏的常量名 + Godot 原生的 "font_size"
             label.AddThemeFontSizeOverride(ThemeConstants.Label.FontSize, Settings.Current.PanelFontSize);
             label.AddThemeFontSizeOverride("font_size", Settings.Current.PanelFontSize);
             label.AddThemeColorOverride(ThemeConstants.Label.FontColor, new Color(1.00f, 0.93f, 0.60f));   // 淡金，和游戏 UI 区分开
@@ -143,8 +153,20 @@ internal static class StatusPanel
             if (!_loggedOk)
             {
                 _loggedOk = true;
-                SeedStore.Log("[面板] ✓ 已在「自定义开局」界面挂上状态面板" +
-                              $"（字号 {Settings.Current.PanelFontSize}，字体取自 {src.Name}）");
+
+                // 诊断：把"实际生效的字号"打出来。
+                // 之前踩过坑 —— MegaLabel 默认 AutoSizeEnabled=true，会在 _Ready 里
+                // 按矩形把字号自动缩放（8~100），把我们 AddThemeFontSizeOverride 设的值踩掉，
+                // 表现就是"改小字号没反应"。这条日志能把那种情况立刻照出来。
+                var effective = -1;
+                try { effective = label.GetThemeFontSize(ThemeConstants.Label.FontSize); } catch { }
+                var themeSize = -1;
+                try { themeSize = label.GetThemeFontSize("font_size"); } catch { }
+
+                SeedStore.Log($"[面板] ✓ 已在「自定义开局」界面挂上状态面板" +
+                              $"（要求字号 {Settings.Current.PanelFontSize}；" +
+                              $"实际生效 {effective}/font_size {themeSize}；" +
+                              $"AutoSize={label.AutoSizeEnabled}）");
             }
         }
         catch (Exception ex)
