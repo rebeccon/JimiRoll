@@ -13,7 +13,7 @@
 ① 涅奥是否给出骨骰        IL 已完全解出，待与 RT2 逐种子对拍
 ② 骨骰给的两个遗物        ✅ 已实现，14/14 地面真值全中
 ③ 骨骰给的诅咒            ✅ 已实现（池子 1:1 解出），逻辑同路
-④ 第一章问号数            ✅ 早已自研完成（本就在 JimiRoll 里）
+④ 第一章地图/出怪占比     ✅ 自研完成（ActMapPredict，v2.2.0）
 ```
 
 **已实证的完整判定链**（`skipRelics = 0`, `skipCurses = 0` —— 两条流在骨骰之前都不被消耗）：
@@ -88,7 +88,7 @@ RT2 是优秀的工程，但**我们只需要它 7 个族里的极小一块**。
 | ① | 涅奥给出的选项里有**骨骰** | RT2 `NeowFamily` | ★★☆ |
 | ② | 骨骰给的 2 个遗物 = 松动羊毛剪 + 新叶 | RT2 `NeowFamily` | ★★☆ |
 | ③ | 骨骰给的诅咒 = 愧疚 | RT2 `NeowFamily` | ★★☆ |
-| ④ | 第一章问号房间数 | **已自研**（`GameInterop.Act1UnknownRooms`） | 已完成 |
+| ④ | 第一章地图（出怪占比） | **已自研**（`ActMapPredict`，见文末附录） | 已完成 |
 
 ⇒ 也就是说 **只剩 ①②③**，而它们全在同一个方法链上。
 
@@ -281,7 +281,7 @@ RT2 当前只支持 **Beta 111（游戏 0.111.0）**。分两个层面看：
 | 种子编解码（`SeedCodec`） | ✅ 稳定。`Radix=34` / `SeedLength=12` / 字母表都是**游戏常量**，基本不会动 |
 | 种子哈希（`XxHash64`） | ✅ 稳定。就是 xxHash64 标准算法 |
 | 种子→RNG（`Rng`/`MegaRandom`） | ✅ **运行时调游戏自己的类**，游戏怎么变都跟着变 |
-| 第一章问号数 | ⚠️ 依赖 `"act_1_map"` 这个**流名字符串**和 `StandardRandomUnknownCount` 的 `(12,1,10,14)` 参数。游戏改数值 → 我们跟着错 |
+| 第一章地图 / 出怪占比 | ⚠️ 依赖 `"act_1_map"` 流名与 `StandardActMap` 的构造签名。另有**游戏自身不可复现**的风险（见文末附录）—— 已用「主线程复核」兜底 |
 
 ⇒ 前三项天然跨版本；**第四项会随游戏版本漂移**，但它是**廉价预筛**，
 真错了只会「多算几个种子」，不会给错种子（最终判定不在它）。
@@ -309,3 +309,74 @@ RT2 当前只支持 **Beta 111（游戏 0.111.0）**。分两个层面看：
 - 打标签 `v1.1.0-rt2`（依赖 RT2 的最后一版），随时可回退。
 - 自研版同时保留 RT2 路径：**有 RT2 就用 RT2 对拍自身**（自检），
   没有就用自研。等对拍稳定 N 个版本后，再彻底删掉 RT2 代码。
+
+---
+
+## ★ 附录（2026-09-27）：第二章「地图」预测的验证与踩坑
+
+v2.2.0 把筛选指标从「问号数最多」换成「出怪房间占比最低」，于是要**离线生成整张 Act1 地图**。
+
+### 复刻方法（IL 实证）
+
+```csharp
+var rng = new Rng(RunRngSeed(seed), "act_1_map");
+var map = new StandardActMap(rng, ModelDb.Act<Overgrowth>(),
+                             isMultiplayer: false, shouldReplaceTreasureWithElites: false,
+                             hasSecondBoss: false, mapPointTypeCountsOverride: null,
+                             enablePruning: true);
+```
+
+- `StandardActMap..ctor`：`_mapLength = act.GetNumberOfRooms(mp) + 1`（Overgrowth 的
+  `BaseNumberOfRooms` = 15，多人 −1）；`_pointTypeCounts = ov ?? act.GetMapPointTypes(_rng)`；
+  然后 `GenerateMap → AssignPointTypes → PruneAndRepair(CenterGrid/Spread/Straighten)`。
+- `Overgrowth.GetMapPointTypes(Rng)`：**先** `NextGaussianInt(7,1,6,7)` 抽**精英数**，
+  **再** `StandardRandomUnknownCount` 抽**问号数**，`new MapPointTypeCounts(问号, 精英)`。
+- `AssignPointTypes` 用 `ListExtensions.StableShuffle`（= 先按 `coord` 排序再 Fisher-Yates）
+  分配固定行，再 `AssignRemainingTypesToRandomPoints` 把 休息/商店/精英/问号 填进剩余格子。
+
+### 验证（`QnProbe mapval`）
+
+地面真值 = `saves/history/*.run` 里 `map_point_history[act][i].map_point_type`（含首格 ancient、
+末格 boss）。判定 = 我们生成的地图里，是否存在一条**沿 `MapPoint.Children` 边、类型序列逐项相同**
+的路径（DAG 记忆化 DP；错误图里碰巧存在 15 位序列的概率 ≈ (2/7)^15 ≈ 1e-8）。
+
+**结果：42 个样本命中 28 个（67%），失败的每一条都只差 1~2 位（共 15~17 位）。**
+⇒ 地图的**形状（格子+连线）100% 正确**，只有个别格子的 `PointType` 不同。
+
+### ★ 根因：游戏的地图生成**不是完全可复现的**
+
+- `MapPoint` 重写了 `Equals(MapPoint)` 却**没有重写 `GetHashCode`**（探针 `dump` 已确认），
+  而地图生成/裁剪里大量使用 `HashSet<MapPoint>`（`Children`、`parents`、`startMapPoints`…）。
+  于是"哪些格子被当成重复项"取决于**对象身份哈希**，而身份哈希是 .NET 按线程本地随机种子
+  惰性分配的（`hashprobe` 实证：不同线程的 `new object().GetHashCode()` 序列完全不同）。
+- 实测直接抓到抖动：同一颗种子 `000000M8LTZB` 在同一局游戏里先后算出 `14/47` 和 `12/48`；
+  搜索时的"三连"诊断也抓到 `27/60 → 23/59 → 23/59`、`16/50 → 18/49 → 18/49`。
+- **推论**：一部分种子没有"正确的怪物占比"可言。
+
+### 对策（三道闸）
+
+1. **搜索侧**：同一颗种子连算 3 次，只要有一次不一致就整颗淘汰。
+2. **交付侧**：进「自定义开局」时在**游戏主线程**复核 2 次，两次一致且 ≤ 门槛才交付，
+   否则丢掉换下一个（最多 12 个）。玩家这一局的地图就在主线程生成，这一步的值才作数。
+3. **黄金自检**：6 颗已知种子的 `(怪物格, 总格)` 必须一致（干净环境下由探针反复核对过）。
+
+### ⚠️ 注意：装别的模组会改变地图
+
+本机同时装了 **RitsuLib**（日志里有 `Dynamic act content patching initialized for 5 act type(s)`）
+和 **UnlockTheSpire**。装了它们之后，部分种子在**游戏进程内**算出来的地图与**干净探针**
+算出来的不一样（同一颗种子：进程内 `9/44`、探针 `12/44`；另一个 `15/51` vs `20/54`，且流程内
+自洽）。所以：
+
+- 离线探针只能当"量级参考"，**不能当验收标准**；
+- 真正的验收标准是**游戏主线程上的复核值**（也就是模组交付时用的那个）。
+
+### 工具命令速查
+
+| 命令 | 作用 |
+|---|---|
+| `QnProbe map <起种子> <数量>` | 地图统计 + 占比分布 + 与问号数的相关性 |
+| `QnProbe mapcdf <起种子> <数量>` | 只出占比 CDF（Stage2 通过率） |
+| `QnProbe mapval [上限] [最短路径]` | 对真实存档做路径验证 |
+| `QnProbe combo <种子>` | 穷举 32 组构造参数，看哪组能得到某个 `(怪物,总格)` |
+| `QnProbe threadcmp <起种子> <数量>` | 主线程 vs 新线程逐颗比对 |
+| `QnProbe nondet <种子>` / `hashprobe` | 抖动测试 / 身份哈希按线程随机性的实证 |

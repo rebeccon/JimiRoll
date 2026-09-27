@@ -57,6 +57,9 @@ internal static class SeedInputPatch
     static bool _everHandled;
     static string _lastFilled;
     static int _takeCount;
+
+    /// <summary>一次填框最多复核几个种子（复核不过就丢掉换下一个）。</summary>
+    const int VerifiedTakeLimit = 12;
     static bool _warnedField;
     static bool _warnedEmpty;
     static bool _warnedDisabled;
@@ -120,8 +123,41 @@ internal static class SeedInputPatch
                 return;
             }
 
-            // ★ 取走队首（删除式）
-            var hit = FoundSeeds.TakeNext();
+            // ★★ 取走队首（删除式）—— 并且在【主线程】上当场复核一遍地图统计。
+            //
+            // 为什么必须复核：地图生成会被"对象身份哈希"之类运行期状态影响，
+            // 后台搜索线程算出来的值**偶尔**和主线程算出来的不一致（实测 14:43 那次就踩到）。
+            // 玩家这一局的地图是在主线程生成的，所以只有**主线程算的值**才作数。
+            // 复核不过的直接丢掉（归档为 rejected），换下一个 —— 这叫"宁可少给，也绝不给错种子"。
+            SeedHit hit = null;
+            for (var attempt = 0; attempt < VerifiedTakeLimit; attempt++)
+            {
+                var cand = FoundSeeds.TakeNext();
+                if (cand == null) break;
+
+                // 连算两次：抖动过的种子两次会不一样，直接淘汰（宁可少给，也绝不给错种子）
+                var (vm, vt, vr) = ActMapPredict.CountRooms(cand.Seed);
+                var (vm2, vt2, vr2) = ActMapPredict.CountRooms(cand.Seed);
+                if (vm2 != vm || vt2 != vt)
+                {
+                    SeedStore.Warn($"[种子框] ✗ 丢弃 {cand.Seed}：主线程两次复核不一致（{vm}/{vt} vs {vm2}/{vt2}）→ 地图抖动，不可信");
+                    continue;
+                }
+                if (vt > 0 && Conditions.MonsterRatioPass(vr))
+                {
+                    if (vm != cand.Act1Monsters || vt != cand.Act1Total)
+                        SeedStore.Log($"[种子框] {cand.Seed} 主线程复核 = {vm}/{vt} = {vr * 100:F1}%（后台记录 {cand.Act1Monsters}/{cand.Act1Total}）；" +
+                                      $"两边数值不同但都合格，以复核为准");
+                    cand.Act1Monsters = vm;
+                    cand.Act1Total = vt;
+                    cand.Act1MonsterPercent = Math.Round(vr * 100.0, 2);
+                    hit = cand;
+                    break;
+                }
+
+                SeedStore.Warn($"[种子框] ✗ 丢弃 {cand.Seed}：主线程复核 {vm}/{vt} = {vr * 100:F1}% 不满足 ≤{Conditions.MaxMonsterRatio * 100:F0}%");
+            }
+
             if (hit == null)
             {
                 _everHandled = true;
@@ -132,13 +168,16 @@ internal static class SeedInputPatch
             // 记下来给状态面板显示（P5）
             StatusPanel.RememberCurrentSeed(hit);
 
+            if (hit.Act1MonsterPercent > Conditions.MaxMonsterRatio * 100.0)
+                SeedStore.Warn($"[种子框] {hit.Seed} 复核后仍然超标（{hit.Act1MonsterPercent:F1}%），请手动留意");
+
             input.Text = hit.Seed;
             _lastFilled = hit.Seed;
             _everHandled = true;
             _lastHandled = now;
             _takeCount++;
 
-            SeedStore.Log($"[种子框] 已填入 {hit.Seed}（问号 {hit.Act1UnknownRooms}）" +
+            SeedStore.Log($"[种子框] 已填入 {hit.Seed}（第一章怪物 {hit.Act1Monsters}/{hit.Act1Total} = {hit.Act1MonsterPercent:F1}%）" +
                           $"—— 这是第 {_takeCount} 个取走的；储备池剩 {FoundSeeds.Count}/{Conditions.ReserveCapacity}");
         }
         catch (Exception ex)

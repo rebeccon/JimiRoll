@@ -6,25 +6,21 @@ using System.Text.Json;
 namespace JimiRoll;
 
 /// <summary>
-/// 两级漏斗搜索器。
+/// 搜索器（v2.1：完全不依赖任何第三方模组）。
 ///
 /// <code>
 /// 全种子空间 (34^12)
-///   │ ① 极廉价预筛：act_1_map 问号数  （每种子 2 次 NextDouble）
-///   │    只保留问号数达标的种子
+///   │ ① 骨骰条件（自研，约 500 万种子/秒）
+///   │    涅奥给骨骰 → 两个遗物 = 松动羊毛剪 + 新叶 → 诅咒 = 愧疚
 ///   ▼
-/// 候选
-///   │ ② 第二级：交给 RolltheSpire2 做骨骰遗物/诅咒的精确搜索
+/// 候选（约 1/1万）
+///   │ ② 第一章地图的【出怪房间占比】≤ 门槛（最贵，约 10~20 张图/秒）
 ///   ▼
 /// 命中 → seeds_found.json
 /// </code>
 ///
-/// <b>关于第②级</b>：RT2 的 <c>ProductionSearchSession</c> 构造需要一个 <b>internal</b> 的
-/// <c>FamilyExecutionPlan</c>，所以"从 LegacySearchInput 直接 new 会话"这条路可能走不通。
-/// 本类因此把第②级做成<b>可插拔的委托</b>：
-/// 只要能提供 <c>Func&lt;string, bool&gt; isMatch</c>（"这个种子满足骨骰条件吗"），
-/// 第①级和第②级就能各自独立工作、也能整体切换实现。
-/// 具体用哪条路线接 RT2，见 <see cref="Rt2Binding"/> 与 RUNBOOK 第 2.3 步。
+/// 两级都是"反着排"的：最便宜的先跑，最贵的放最后。
+/// 因为第①级只放 1/1万 的种子过去，第②级实际承担的负载极小。
 /// </summary>
 internal static class SearchDriver
 {
@@ -125,9 +121,11 @@ internal static class SearchDriver
         SeedStore.Log("哈希: " + GameInterop.VerifyReport);
         SeedStore.Log($"起点 ordinal = {learned.NextOrdinal}");
 
+        // ★ 0 = 自动。现在瓶颈是纯 CPU 的地图生成（~55ms/张、无共享锁），
+        //    所以多线程是线性收益；留 1 个核给游戏本身。
         var workers = Conditions.WorkerCount > 0
             ? Conditions.WorkerCount
-            : Math.Max(1, Environment.ProcessorCount / 2);
+            : Math.Clamp(Environment.ProcessorCount - 1, 1, 8);
         SeedStore.Log($"线程数 = {workers}（逻辑核 {Environment.ProcessorCount}）");
         SeedStore.Log($"目标: 把储备池补到 {Conditions.ReserveCapacity} 个（当前 {SeedStore.ReserveCount} 个）就停手；" +
                       $"单次最多跑 {Conditions.MaxRunMinutes} 分钟（防内存持续上涨）");
@@ -140,6 +138,7 @@ internal static class SearchDriver
         var seedCounter = 0;
         var budget = TimeSpan.FromMinutes(Math.Max(1, Conditions.MaxRunMinutes));
         var memAtStart = GC.GetTotalMemory(false);
+
 
         try
         {
@@ -190,7 +189,7 @@ internal static class SearchDriver
                     var mem = GC.GetTotalMemory(false);
                     SeedStore.Log(
                         $"进度: 已扫 {s:N0}  第①级通过 {Interlocked.Read(ref _passedStage1):N0}  " +
-                        $"命中本轮 {Interlocked.Read(ref _matched):N0}  " +
+                        $"命中本轮 {Interlocked.Read(ref _matched):N0}  抖动淘汰 {Interlocked.Read(ref _mapUnstable):N0}  " +
                         $"储备 {SeedStore.ReserveCount}/{Conditions.ReserveCapacity}  " +
                         $"{SeedsPerSecond:N0} 种子/秒  " +
                         $"托管内存 {mem / 1024.0 / 1024.0:F1} MB (起始 {memAtStart / 1024.0 / 1024.0:F1} MB)  " +
@@ -235,6 +234,9 @@ internal static class SearchDriver
 
     static long _cursorOrdinal;
 
+    /// <summary>因为地图生成抖动而被淘汰的候选数（诊断用）。</summary>
+    static long _mapUnstable;
+
     static void ScanRange(ulong from, ulong to, Action<string> onMatch, CancellationToken ct)
     {
         // 在 char[] 上做 34 进制递增，避免每个种子都做一次除法取模
@@ -251,63 +253,76 @@ internal static class SearchDriver
 
             var seed = new string(buf);
 
-            // ---------- 第①级：极廉价预筛 ----------
-            var qn = GameInterop.Act1UnknownRooms(seed);
-            if (!Conditions.UnknownRoomsPass(qn))
+            // ---------- 第①级：自研判定骨骰条件（①是否给骨骰 ②遗物 ③诅咒）----------
+            //  ★ 完全不用 RolltheSpire2。已与 RT2 在 10 万个种子上对拍，一致率 100.0000%。
+            if (!NeowPredict.IsMatch(seed, out var bonesEvidence))
             {
+                Interlocked.Increment(ref _scanned);
+                if (!SeedCodec.Increment(buf)) return;
+                continue;
+            }
+
+            // ★ 双保险守卫：证据里必须真的出现「✓全中」才继续。
+            //   之前 LastEvidence 是共享静态字段，跨线程被覆盖，导致结果文件里
+            //   混进了一批「Evidence = Neow 未给骨骰」的假记录。
+            //   现在证据按线程传递，再加这道守卫，任何竞态都不可能污染结果。
+            if (bonesEvidence == null || !bonesEvidence.Contains("✓全中"))
+            {
+                SeedStore.Log($"⚠ 判定命中但证据不一致，已丢弃: {seed}  证据={bonesEvidence}");
                 Interlocked.Increment(ref _scanned);
                 if (!SeedCodec.Increment(buf)) return;
                 continue;
             }
             Interlocked.Increment(ref _passedStage1);
 
-            // ---------- 第②级：自研判定骨骰条件（①是否给骨骰 ②遗物 ③诅咒）----------
-            //  ★ 完全不用 RolltheSpire2。已与 RT2 在 10 万个种子上对拍，一致率 100.0000%。
-            if (NeowPredict.IsMatch(seed, out var bonesEvidence))
-            {
-                // ★ 双保险守卫：证据里必须真的出现「✓全中」才继续。
-                //   之前 LastEvidence 是共享静态字段，跨线程被覆盖，导致结果文件里
-                //   混进了一批「Evidence = Neow 未给骨骰」的假记录。
-                //   现在证据按线程传递，再加这道守卫，任何竞态都不可能污染结果。
-                if (bonesEvidence == null || !bonesEvidence.Contains("✓全中"))
-                {
-                    SeedStore.Log($"⚠ 判定命中但证据不一致，已丢弃: {seed}  证据={bonesEvidence}");
-                }
-                // ---------- 第③级（可选）：第一个问号房间必须是事件，且该事件是变形灵林谷 ----------
-                //  ★ 默认【关闭】—— 事件队列的预测还没验证通过（真实存档 0/4）。
-                //    开启它会给出错误的种子，所以要显式打开才生效。
-                else
-                {
-                    // ⚠️ 事件条件默认关闭（预测未验证通过，真实存档 0/4）。
-                    //    关闭时这里恒为 true，等于不做这条筛选。
-                    string eventEvidence = "";
-                    var eventOk = !Conditions.RequireFirstEvent
-                                  || EventPredict.FirstRoomIsTargetEvent(seed, out eventEvidence);
-                    if (!eventOk)
-                    {
-                        // 不满足事件条件 —— 正常淘汰，不打日志（太吵）
-                    }
-                    else
-                    {
-                    var evidence = Conditions.RequireFirstEvent
-                        ? bonesEvidence + " ；" + eventEvidence
-                        : bonesEvidence;
+            // ---------- 第②级：Act1 地图【出怪房间占比】----------
+            //  ★ 最贵的一级（要真的把整张地图生成出来），所以放在最后。
+            //    真实存档验证：地图结构 42/42 完全一致，类型 28/42 逐项一致，
+            //    其余差 1~2 个格子（游戏运行中会改写个别格子的类型，见 docs/去RT2化方案.md）。
+            var (mon, total, ratio) = ActMapPredict.CountRooms(seed);
 
-                    var n = Interlocked.Increment(ref _matched);
-                    var hit = new SeedHit
-                    {
-                        Seed = seed,
-                        Ordinal = ord,
-                        Act1UnknownRooms = qn,
-                        FoundAtUtc = DateTime.UtcNow.ToString("O"),
-                        Evidence = evidence,
-                    };
-                    SeedStore.AddHit(hit);
-                    SeedStore.Log($"★ 命中 #{n}: {seed}（问号 {qn}）{evidence}");
-                    try { onMatch?.Invoke(seed); } catch { }
-                    }
+            // ★ 稳定性判定：同一颗种子连算 3 次，只要有一次不一样就直接淘汰。
+            //
+            // 为什么必须有：实测这颗种子的地图生成**真的会抖动**
+            // （日志里出现过 27/60 / 23/59 / 23/59 这种三连不一致）。
+            // 抖动的种子没有"正确的占比"可言，交给玩家就是碰运气 —— 一律不要。
+            {
+                var b = ActMapPredict.CountRooms(seed);
+                var c = ActMapPredict.CountRooms(seed);
+                if (b.Monsters != mon || b.Total != total || c.Monsters != mon || c.Total != total)
+                {
+                    Interlocked.Increment(ref _mapUnstable);
+                    SeedStore.Debug($"地图不稳定，已淘汰 {seed}: {mon}/{total}, {b.Monsters}/{b.Total}, {c.Monsters}/{c.Total}");
+                    Interlocked.Increment(ref _scanned);
+                    if (!SeedCodec.Increment(buf)) return;
+                    continue;
                 }
             }
+
+            if (!Conditions.MonsterRatioPass(ratio))
+            {
+                Interlocked.Increment(ref _scanned);
+                if (!SeedCodec.Increment(buf)) return;
+                continue;
+            }
+
+            var percent = ratio * 100.0;
+            var evidence = bonesEvidence + $" ；第一章怪物 {mon}/{total} = {percent:F1}%（≤{Conditions.MaxMonsterRatio * 100:F0}%）";
+
+            var n = Interlocked.Increment(ref _matched);
+            var hit = new SeedHit
+            {
+                Seed = seed,
+                Ordinal = ord,
+                Act1Monsters = mon,
+                Act1Total = total,
+                Act1MonsterPercent = percent,
+                FoundAtUtc = DateTime.UtcNow.ToString("O"),
+                Evidence = evidence,
+            };
+            SeedStore.AddHit(hit);
+            SeedStore.Log($"★ 命中 #{n}: {seed}（第一章怪物 {mon}/{total} = {percent:F1}%）{bonesEvidence}");
+            try { onMatch?.Invoke(seed); } catch { }
 
             Interlocked.Increment(ref _scanned);
             if (!SeedCodec.Increment(buf)) return;
@@ -315,37 +330,30 @@ internal static class SearchDriver
     }
 
     // ------------------------------------------------------------------
-    // 自检：只跑第①级，不碰 RT2。用于"先确认廉价那半是对的"。
+    // 自检：量一下第①级（骨骰判定）的速度。
     // ------------------------------------------------------------------
 
     public static string QuickSelfTest(ulong startOrdinal, int count)
     {
         var sb = new StringBuilder();
         var sw = Stopwatch.StartNew();
-        var hist = new long[GameInterop.UnknownRoomsMax + 2];
+        var bones = 0L;
         var buf = SeedCodec.ToChars(startOrdinal);
+        var done = 0;
 
         for (var i = 0; i < count; i++)
         {
             var seed = new string(buf);
-            var qn = GameInterop.Act1UnknownRooms(seed);
-            if (qn >= 0 && qn < hist.Length) hist[qn]++;
+            if (NeowPredict.IsMatch(seed, out _)) bones++;
+            done++;
             if (!SeedCodec.Increment(buf)) break;
         }
         sw.Stop();
 
-        var rate = count / Math.Max(sw.Elapsed.TotalSeconds, 1e-9);
+        var rate = done / Math.Max(sw.Elapsed.TotalSeconds, 1e-9);
 
-        // Info：只给一行结论
-        var pass = 0L;
-        for (var q = 0; q < hist.Length; q++) if (Conditions.UnknownRoomsPass(q)) pass += hist[q];
-        sb.AppendLine($"扫描 {count:N0} 个种子，耗时 {sw.Elapsed.TotalSeconds:F3}s → {rate:N0} 种子/秒（{rate / 1e6:F2} M/s）");
-        sb.AppendLine($"  第①级通过率 : {pass * 100.0 / count:F2}%");
-
-        // Debug：完整分布（每次启动都打太吵）
-        if (Logger.Level <= LogLevel.Debug)
-            for (var q = GameInterop.UnknownRoomsMin; q <= GameInterop.UnknownRoomsMax; q++)
-                sb.AppendLine($"  问号 {q,2} 个 : {hist[q],10:N0}  ({hist[q] * 100.0 / count,6:F2}%)");
+        sb.AppendLine($"扫描 {done:N0} 个种子，耗时 {sw.Elapsed.TotalSeconds:F3}s → {rate:N0} 种子/秒（{rate / 1e6:F2} M/s）");
+        sb.AppendLine($"  骨骰条件通过率 : {bones * 100.0 / Math.Max(done, 1):F4}%");
 
         return sb.ToString();
     }

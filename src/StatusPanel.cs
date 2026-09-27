@@ -49,7 +49,7 @@ internal static class StatusPanel
 
     /// <summary>本局取走的那张种子（供面板显示）。</summary>
     static string _currentSeed;
-    static int _currentQn;
+    static double _currentMonsterPercent;
 
     static bool _warnedNoFont;
     static bool _warnedDisabled;
@@ -61,7 +61,7 @@ internal static class StatusPanel
         try
         {
             _currentSeed = hit?.Seed;
-            _currentQn = hit?.Act1UnknownRooms ?? 0;
+            _currentMonsterPercent = hit?.Act1MonsterPercent ?? 0;
         }
         catch { /* 纯展示，失败无所谓 */ }
     }
@@ -224,7 +224,7 @@ internal static class StatusPanel
             sb.Append("　｜　");
             sb.Append(Loc.T("本局 ", "this run "));
             sb.Append(_currentSeed);
-            sb.Append(Loc.T($"（问号 {_currentQn}）", $" ({_currentQn} ?)"));
+            sb.Append(Loc.T($"（怪物 {_currentMonsterPercent:F1}%）", $" (monsters {_currentMonsterPercent:F1}%)"));
         }
 
         _label.Text = sb.ToString();

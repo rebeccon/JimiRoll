@@ -49,11 +49,13 @@ internal static class Conditions
     //     （文件在 %APPDATA%\SlayTheSpire2\JimiRoll\settings.json）
     // ==================================================================
 
-    /// <summary>第一章问号房间的门槛。取值范围只可能是 10~14。</summary>
-    public static int TargetAct1UnknownRooms => Settings.Current.MinUnknownRooms;
-
-    /// <summary>true = 必须恰好等于门槛；false = 大于等于。</summary>
-    public static bool RequireExactUnknownRooms => Settings.Current.RequireExactUnknownRooms;
+    /// <summary>
+    /// ★ 核心指标：第一章地图里**怪物房间占全部格子的比重**的上限（0~1）。
+    /// 越低越好；越小越难找。
+    ///
+    /// 实测分布（400 个种子）：占比大致在 30%~58%，平均约 43%。
+    /// </summary>
+    public static double MaxMonsterRatio => Settings.Current.MaxMonsterPercent / 100.0;
 
     /// <summary>角色。</summary>
     public static string CharacterKey => Settings.Current.CharacterKey;
@@ -65,24 +67,15 @@ internal static class Conditions
     public static int PlayersCount => Settings.Current.PlayersCount;
 
     /// <summary>
-    /// 搜索线程数。
+    /// 搜索线程数。0 = 自动（<c>min(逻辑核数 - 1, 8)</c>）。
     ///
-    /// ★ 实测结论：<b>1 个就够</b>，多开纯属白烧 CPU。
-    ///
-    /// 原因：瓶颈在第二级，而 RT2 的 Predict 已被全局锁串行化（约 2.8 万次/秒）。
-    /// 单线程的第一级产出 = 370 万种子/秒 × 69% 通过率 ≈ 250 万次/秒，
-    /// 远超第二级能吃下的量。所以再加线程只会分走游戏的 CPU 和内存带宽。
+    /// ★ 现在瓶颈是第二级的地图生成：~55ms/张、纯 CPU、没有共享锁，
+    ///   所以多线程是线性收益（8 线程 ≈ 136 张/秒）。
     /// </summary>
     public static int WorkerCount => Settings.Current.WorkerCount;
 
     /// <summary>★ 储备池容量 —— 存放的种子数量恒定维持在这个值。</summary>
     public static int ReserveCapacity => Settings.Current.ReserveCapacity;
-
-    /// <summary>
-    /// 是否要求「第一个问号房间是事件，且该事件为变形灵林谷」。
-    /// ⚠️ 默认【关】—— 事件队列的预测还没验证通过（见 SettingsData.RequireFirstEvent）。
-    /// </summary>
-    public static bool RequireFirstEvent => Settings.Current.RequireFirstEvent;
 
     /// <summary>单次搜索的时间上限（分钟）—— 防内存持续上涨的安全网。</summary>
     public static int MaxRunMinutes => Settings.Current.MaxRunMinutes;
@@ -97,14 +90,12 @@ internal static class Conditions
     // 判断辅助
     // ==================================================================
 
-    public static bool UnknownRoomsPass(int actual)
-        => RequireExactUnknownRooms
-            ? actual == TargetAct1UnknownRooms
-            : actual >= TargetAct1UnknownRooms;
+    /// <summary>这个怪物占比合不合格。</summary>
+    public static bool MonsterRatioPass(double ratio) => ratio <= MaxMonsterRatio;
 
     /// <summary>把条件描述成一行，写进结果文件和日志，方便日后对账。</summary>
     public static string Describe()
         => $"涅奥骨骰={RequireRelicKey}; 遗物={string.Join("+", RequiredBonesRelics)}; "
-         + $"诅咒={RequiredFinalCurseKey}; 第一章问号{(RequireExactUnknownRooms ? "==" : ">=")}{TargetAct1UnknownRooms}; "
+         + $"诅咒={RequiredFinalCurseKey}; 第一章怪物占比<={MaxMonsterRatio * 100:F0}%; "
          + $"{CharacterKey} A{Ascension}";
 }

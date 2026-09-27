@@ -32,7 +32,7 @@ internal static class FoundSeeds
         if (hit == null) return null;
 
         SeedStore.Flush();   // 立刻写盘，保证"取走即删除"是持久的
-        SeedStore.Log($"[取走] {hit.Seed}（问号 {hit.Act1UnknownRooms}）→ 已从储备池删除并归档；" +
+        SeedStore.Log($"[取走] {hit.Seed}（第一章怪物 {hit.Act1Monsters}/{hit.Act1Total} = {hit.Act1MonsterPercent:F1}%）→ 已从储备池删除并归档；" +
                       $"剩余 {remaining}/{Conditions.ReserveCapacity}");
         return hit;
     }
@@ -59,7 +59,7 @@ internal static class FoundSeeds
         var next = all[0];
 
         // Info：一行摘要
-        SeedStore.Log($"储备池 {all.Count}/{Conditions.ReserveCapacity}（队首 {next.Seed} 问号{next.Act1UnknownRooms}）" +
+        SeedStore.Log($"储备池 {all.Count}/{Conditions.ReserveCapacity}（队首 {next.Seed} 怪物占比{next.Act1MonsterPercent:F1}%）" +
                       $"｜归档 {SeedStore.ArchiveCount}｜取走方式：进「自定义开局」自动取队首并填入");
 
         if (solid < all.Count)
@@ -74,7 +74,7 @@ internal static class FoundSeeds
         {
             var h = all[i];
             var mark = h.Evidence != null && h.Evidence.Contains("全中") ? ' ' : '?';
-            sb.AppendLine($"  {i + 1,3}.{mark} 问号{h.Act1UnknownRooms}   {h.Seed}");
+            sb.AppendLine($"  {i + 1,3}.{mark} 怪物{h.Act1Monsters,3}/{h.Act1Total,-3} = {h.Act1MonsterPercent,5:F1}%   {h.Seed}");
         }
         SeedStore.Debug(sb.ToString());
     }
@@ -98,5 +98,5 @@ internal static class FoundSeeds
     public static string Summary()
         => Count == 0
             ? "0 个（需要补充）"
-            : $"{Count}/{Conditions.ReserveCapacity} 个，队首是 {All[0].Seed}（问号 {All[0].Act1UnknownRooms}）";
+            : $"{Count}/{Conditions.ReserveCapacity} 个，队首是 {All[0].Seed}（怪物占比 {All[0].Act1MonsterPercent:F1}%）";
 }

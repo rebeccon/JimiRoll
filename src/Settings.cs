@@ -14,11 +14,21 @@ internal sealed class SettingsData
     /// <summary>储备池容量 —— 存放的种子数量恒定维持在这个值。</summary>
     public int ReserveCapacity { get; set; } = 10;
 
-    /// <summary>第一章问号房间的门槛。</summary>
-    public int MinUnknownRooms { get; set; } = 14;
-
-    /// <summary>true = 必须恰好等于门槛；false = 大于等于。</summary>
-    public bool RequireExactUnknownRooms { get; set; } = false;
+    /// <summary>
+    /// ★ 核心指标：第一章地图里【怪物房间占全部格子的比重】的上限（百分数，0~100）。
+    /// 越低越好，越小越难找。
+    ///
+    /// 实测 CDF（2000 个种子的 Act1 地图，占比范围 24%~58%，平均约 43%）：
+    /// <code>
+    ///   ≤24% 0.05%   ≤26% 0.05%   ≤28% 0.25%   ≤30% 0.60%
+    ///   ≤32% 1.65%   ≤33% 2.10%   ≤34% 3.20%   ≤35% 4.10%
+    ///   ≤38% 10.5%   ≤40% 21.5%   ≤45% 63.4%
+    /// </code>
+    /// 单张地图生成要 ~55ms（比骨骰判定贵约 3 万倍），所以这一级是真正的瓶颈。
+    /// 默认 30% 是"质量"与"凑齐一个储备池要多久"的折中：
+    /// 8 线程下约 0.8 个/秒 → 10 个储备约 12 秒；改成 35% 会快 7 倍。
+    /// </summary>
+    public int MaxMonsterPercent { get; set; } = 30;
 
     /// <summary>角色（形如 CHARACTER:SILENT）。</summary>
     public string CharacterKey { get; set; } = "CHARACTER:SILENT";
@@ -33,11 +43,13 @@ internal sealed class SettingsData
     public int MaxRunMinutes { get; set; } = 3;
 
     /// <summary>
-    /// 搜索线程数。
-    /// 实测瓶颈在第二级（RT2 的 Predict 是串行的），多开线程对总速度没帮助，
-    /// 只会多占游戏的 CPU 和内存带宽。所以默认 1。
+    /// 搜索线程数。<b>0 = 自动</b>（<c>min(逻辑核数 - 1, 8)</c>），推荐就用 0。
+    ///
+    /// v2.0 时默认 1 是因为瓶颈在 RT2 的串行 Predict；现在瓶颈是
+    /// <b>Act1 地图生成（~55ms/张，纯 CPU、无共享锁）</b>，多线程能线性提速，所以该多开。
+    /// 搜索只在储备池不满时跑，凑满就空闲，不会一直占着 CPU。
     /// </summary>
-    public int WorkerCount { get; set; } = 1;
+    public int WorkerCount { get; set; } = 0;
 
     /// <summary>
     /// 日志级别：<c>Debug</c> / <c>Info</c> / <c>Warn</c> / <c>Error</c> / <c>Off</c>。
@@ -53,17 +65,6 @@ internal sealed class SettingsData
     /// 它是纯展示、只新增节点、不动游戏原有 UI；不想看到就设成 false。
     /// </summary>
     public bool ShowStatusPanel { get; set; } = true;
-
-    /// <summary>
-    /// 是否启用「第一个问号房间必须是事件且为变形灵林谷」这条条件。
-    ///
-    /// ⚠️ <b>默认关闭，而且目前不该打开</b> ——
-    /// 2026-09-27 用真实存档的 4 个 Overgrowth 样本验证，事件队列的预测 <b>0/4</b>：
-    /// 房间类型掷骰、Act1 判断、事件池都已经验证过是对的，
-    /// 但「第一个事件是队列里的哪一张」这一环还没解开（详见 docs/去RT2化方案.md）。
-    /// 因为错的判定会给出<b>错误的种子</b>，所以默认关掉，等解开再开。
-    /// </summary>
-    public bool RequireFirstEvent { get; set; } = false;
 
     /// <summary>状态面板的字号。</summary>
     public int PanelFontSize { get; set; } = 10;
@@ -181,14 +182,15 @@ internal static class Settings
         if (d.ReserveCapacity < 1 || d.ReserveCapacity > 200)
         { notes.Add($"ReserveCapacity={d.ReserveCapacity} → 10"); d.ReserveCapacity = 10; }
 
-        if (d.MinUnknownRooms < 10 || d.MinUnknownRooms > 14)
-        { notes.Add($"MinUnknownRooms={d.MinUnknownRooms} → 14（游戏取值范围只可能是 10~14）"); d.MinUnknownRooms = 14; }
+        if (d.MaxMonsterPercent < 10 || d.MaxMonsterPercent > 100)
+        { notes.Add($"MaxMonsterPercent={d.MaxMonsterPercent} → 30"); d.MaxMonsterPercent = 30; }
 
         if (d.MaxRunMinutes < 1 || d.MaxRunMinutes > 60)
         { notes.Add($"MaxRunMinutes={d.MaxRunMinutes} → 3"); d.MaxRunMinutes = 3; }
 
-        if (d.WorkerCount < 1 || d.WorkerCount > 32)
-        { notes.Add($"WorkerCount={d.WorkerCount} → 1"); d.WorkerCount = 1; }
+        // 0 = 自动，是合法值；负数或过大才纠正
+        if (d.WorkerCount < 0 || d.WorkerCount > 32)
+        { notes.Add($"WorkerCount={d.WorkerCount} → 0（自动）"); d.WorkerCount = 0; }
 
         if (d.Ascension < 0 || d.Ascension > 20)
         { notes.Add($"Ascension={d.Ascension} → 10"); d.Ascension = 10; }
@@ -212,7 +214,7 @@ internal static class Settings
     public static string Describe()
     {
         var d = Current;
-        return $"储备池={d.ReserveCapacity}; 问号{(d.RequireExactUnknownRooms ? "==" : ">=")}{d.MinUnknownRooms}; " +
+        return $"储备池={d.ReserveCapacity}; 怪物占比<={d.MaxMonsterPercent}%; " +
                $"{d.CharacterKey} A{d.Ascension}; 线程={d.WorkerCount}; 单次上限={d.MaxRunMinutes}分钟; " +
                $"面板={(d.ShowStatusPanel ? "开" : "关")}";
     }

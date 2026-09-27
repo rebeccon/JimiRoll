@@ -8,10 +8,22 @@ internal sealed class SeedHit
 {
     public string Seed { get; set; } = "";
     public ulong Ordinal { get; set; }
-    public int Act1UnknownRooms { get; set; }
+
+    /// <summary>第一章地图上的【怪物房间】数。</summary>
+    public int Act1Monsters { get; set; }
+
+    /// <summary>第一章地图的总节点数。</summary>
+    public int Act1Total { get; set; }
+
+    /// <summary>第一章【出怪房间占比】= Act1Monsters / Act1Total × 100。越小越好。</summary>
+    public double Act1MonsterPercent { get; set; }
+
     public string FoundAtUtc { get; set; } = "";
-    /// <summary>RT2 给出的命中证据。</summary>
+    /// <summary>命中证据（骨骰 / 遗物 / 诅咒）。</summary>
     public string Evidence { get; set; } = "";
+
+    /// <summary>这条记录是不是当前判定口径的产物（旧版记录缺章节字段 → false）。</summary>
+    public bool IsCurrentSchema => Act1Total > 0;
 }
 
 /// <summary>离开储备池的种子（用掉的，或超过上限被移出的）。不删，只归档。</summary>
@@ -19,8 +31,10 @@ internal sealed class ArchiveEntry
 {
     public string Seed { get; set; } = "";
     public ulong Ordinal { get; set; }
-    public int Act1UnknownRooms { get; set; }
-    /// <summary>"used" = 进入开局界面取走的；"overflow" = 超过 15 个上限被移出的。</summary>
+    public int Act1Monsters { get; set; }
+    public int Act1Total { get; set; }
+    public double Act1MonsterPercent { get; set; }
+    /// <summary>"used" = 进入开局界面取走的；"overflow" = 超过储备上限被移出的；"stale" = 旧判定口径残留。</summary>
     public string Reason { get; set; } = "";
     public string AtUtc { get; set; } = "";
 }
@@ -129,13 +143,16 @@ internal static class SeedStore
     /// <summary>储备池是否已满（满了就不用再搜）。</summary>
     public static bool IsReserveFull => ReserveCount >= Conditions.ReserveCapacity;
 
-    /// <summary>储备池快照（副本，按优先级排好：问号多 → 证据确凿 → 序号小）。</summary>
+    /// <summary>储备池快照（副本，按优先级排好：怪物占比低 → 证据确凿 → 序号小）。
+    ///
+    /// ★ 排序口径 = 用户的核心诉求「出怪房间占比越低越好」。
+    ///   旧口径（缺章节字段）的记录会被当成无效项剔掉，见 <see cref="SeedHit.IsCurrentSchema"/>。</summary>
     public static List<SeedHit> LoadHits()
     {
         lock (FileGate)
             return ReserveLocked()
-                .Where(h => h != null && !string.IsNullOrWhiteSpace(h.Seed))
-                .OrderByDescending(h => h.Act1UnknownRooms)
+                .Where(h => h != null && !string.IsNullOrWhiteSpace(h.Seed) && h.IsCurrentSchema)
+                .OrderBy(h => h.Act1MonsterPercent)
                 .ThenByDescending(h => h.Evidence != null && h.Evidence.Contains("全中"))
                 .ThenBy(h => h.Ordinal)
                 .ToList();
@@ -162,7 +179,9 @@ internal static class SeedStore
                 {
                     Seed = hit.Seed,
                     Ordinal = hit.Ordinal,
-                    Act1UnknownRooms = hit.Act1UnknownRooms,
+                    Act1Monsters = hit.Act1Monsters,
+                    Act1Total = hit.Act1Total,
+                    Act1MonsterPercent = hit.Act1MonsterPercent,
                     Reason = "overflow",
                     AtUtc = DateTime.UtcNow.ToString("O"),
                 });
@@ -211,7 +230,9 @@ internal static class SeedStore
             {
                 Seed = head.Seed,
                 Ordinal = head.Ordinal,
-                Act1UnknownRooms = head.Act1UnknownRooms,
+                Act1Monsters = head.Act1Monsters,
+                Act1Total = head.Act1Total,
+                Act1MonsterPercent = head.Act1MonsterPercent,
                 Reason = "used",
                 AtUtc = DateTime.UtcNow.ToString("O"),
             });
@@ -231,11 +252,25 @@ internal static class SeedStore
     {
         lock (FileGate)
         {
+            // ---- 每个储备项按新粒度补全统计 ----
+            foreach (var h in ReserveLocked())
+                ActMapPredict.FillStats(h);
+
             var ordered = LoadHits();
             var reserve = ReserveLocked();
             var cap = Conditions.ReserveCapacity;
 
-            // ---- 先去重（保留优先级最高的那个）----
+            // ---- 先剔掉旧判定口径的残留（缺失章节统计，无法比较占比）----
+            var allReserve = ReserveLocked().Where(h => h != null && !string.IsNullOrWhiteSpace(h.Seed)).ToList();
+            var dropped = allReserve.Where(h => !h.IsCurrentSchema).ToList();
+            foreach (var h in dropped)
+                ArchiveLocked().Add(new ArchiveEntry
+                {
+                    Seed = h.Seed, Ordinal = h.Ordinal,
+                    Reason = "stale", AtUtc = DateTime.UtcNow.ToString("O"),
+                });
+
+            // ---- 再去重（保留优先级最高的那个）----
             var distinct = new List<SeedHit>();
             var seen = new HashSet<string>(StringComparer.Ordinal);
             var dupes = 0;
@@ -251,7 +286,9 @@ internal static class SeedStore
             foreach (var h in removed)
                 ArchiveLocked().Add(new ArchiveEntry
                 {
-                    Seed = h.Seed, Ordinal = h.Ordinal, Act1UnknownRooms = h.Act1UnknownRooms,
+                    Seed = h.Seed, Ordinal = h.Ordinal,
+                    Act1Monsters = h.Act1Monsters, Act1Total = h.Act1Total,
+                    Act1MonsterPercent = h.Act1MonsterPercent,
                     Reason = "overflow", AtUtc = DateTime.UtcNow.ToString("O"),
                 });
 
@@ -261,7 +298,7 @@ internal static class SeedStore
             // 重建去重集合（储备池 + 归档）
             _seen = null;
 
-            if (dupes > 0 || removed.Count > 0) _dirty = true;
+            if (dupes > 0 || removed.Count > 0 || dropped.Count > 0) _dirty = true;
             return (dupes, removed.Count);
         }
     }
@@ -303,7 +340,7 @@ internal static class SeedStore
     static void WriteTextList(List<SeedHit> hits)
     {
         var ordered = hits.Where(h => h != null && !string.IsNullOrWhiteSpace(h.Seed))
-                          .OrderByDescending(h => h.Act1UnknownRooms)
+                          .OrderBy(h => h.Act1MonsterPercent)
                           .ThenByDescending(h => h.Evidence != null && h.Evidence.Contains("全中"))
                           .ThenBy(h => h.Ordinal)
                           .ToList();

@@ -64,11 +64,57 @@ public static class MainFile
         SeedStore.Log("运行模式: 默认自动运行（储备池不满就补搜，满了就空闲待命）");
         SeedStore.Log("  唯一的暂停方式: 建一个空文件 " + DisableSearchFile);
 
-        // ---- 0. 读取并整理储备池（与开关无关，总是要做）----
+        // ---- 1. 自检 ----
+        var problems = new List<string>();
+        try { SeedCodec.SelfTest(problems); }
+        catch (Exception ex) { problems.Add("[SeedCodec] 自检抛异常: " + ex); }
+
+        try { GameInterop.SelfTest(problems); }
+        catch (Exception ex) { problems.Add("[GameInterop] 自检抛异常: " + ex); }
+
+        SeedStore.Log("种子哈希: " + GameInterop.VerifyReport);
+
+        // ---- 1.5 第②级预测器：主线程初始化（要访问 ModelDb）----
+        //  ★ 必须在主线程：NeowPredict / ActMapPredict 都要读 ModelDb。
+        //    本方法由 NMainMenu._Ready 的后置补丁调用，那正是主线程。
+        var predictOk = NeowPredict.Initialize();
+        SeedStore.Log("骨骰判定状态: " + NeowPredict.Status);
+        if (!predictOk)
+        {
+            SeedStore.Error("✗ 骨骰判定没初始化成功 —— 拒绝搜索（不给错种子）");
+            return false;
+        }
+
+        // ---- 1.6 地图生成：主线程初始化（同样要访问 ModelDb）----
+        var mapOk = ActMapPredict.Initialize();
+        SeedStore.Log("地图判定状态: " + ActMapPredict.Status);
+        if (!mapOk)
+        {
+            SeedStore.Error("✗ Act1 地图生成没初始化成功 —— 拒绝搜索（不给错种子）");
+            return false;
+        }
+
+        // ---- 1.7 自研预测器自检：用游戏内实测过的已知命中种子 ----
+        //  ★ 这是摘掉 RT2 之后最重要的保险：13 个地面真值种子必须全部判为命中。
+        //    任何一个不过，都说明 RNG 流 / 池子顺序 / 前置消耗的推导有问题。
+        try { NeowPredict.SelfTest(problems); }
+        catch (Exception ex) { problems.Add("[自研] 自检抛异常: " + ex); }
+
+
+        if (problems.Count > 0)
+        {
+            SeedStore.Error("✗✗✗ 自检失败，为避免给出错误种子，搜索不会启动：");
+            foreach (var p in problems) SeedStore.Log("  - " + p);
+            return false;
+        }
+        SeedStore.Log("✓ 自检通过（种子哈希与游戏一致）");
+
+        // ---- 0. 读取并整理储备池 ----
+        //  ★ 放在判定器初始化之后：旧存档缺章节统计，要靠 ActMapPredict 现补。
         try
         {
             SeedStore.Flush();                          // 把上次没落盘的状态写出去
-            var (dupes, overflow) = SeedStore.TrimToCapacity();   // 去重 + 裁到上限
+            var (dupes, overflow) = SeedStore.TrimToCapacity();   // 补统计 + 去重 + 裁到上限
             if (dupes > 0)
                 SeedStore.Log($"储备池发现 {dupes} 个重复种子，已去掉");
             if (overflow > 0)
@@ -86,53 +132,7 @@ public static class MainFile
             SeedStore.Warn("整理储备池失败（不影响其它功能）: " + ex.Message);
         }
 
-        // ---- 1. 自检 ----
-        var problems = new List<string>();
-        try { SeedCodec.SelfTest(problems); }
-        catch (Exception ex) { problems.Add("[SeedCodec] 自检抛异常: " + ex); }
-
-        try { GameInterop.SelfTest(problems); }
-        catch (Exception ex) { problems.Add("[GameInterop] 自检抛异常: " + ex); }
-
-        SeedStore.Log("种子哈希: " + GameInterop.VerifyReport);
-
-        // ---- 1.5 第②级预测器：主线程初始化（要访问 ModelDb）----
-        //  ★ 必须在主线程：NeowPredict / EventPredict 都要读 ModelDb。
-        //    本方法由 NMainMenu._Ready 的后置补丁调用，那正是主线程。
-        var predictOk = NeowPredict.Initialize();
-        SeedStore.Log("骨骰判定状态: " + NeowPredict.Status);
-        if (!predictOk)
-        {
-            SeedStore.Error("✗ 骨骰判定没初始化成功 —— 拒绝搜索（不给错种子）");
-            return false;
-        }
-
-        var eventOk = EventPredict.Initialize();
-        SeedStore.Log("事件判定状态: " + EventPredict.Status);
-        if (!eventOk)
-        {
-            SeedStore.Error("✗ 事件判定没初始化成功 —— 拒绝搜索（不给错种子）");
-            return false;
-        }
-
-        // ---- 1.6 自研预测器自检：用游戏内实测过的已知命中种子 ----
-        //  ★ 这是摘掉 RT2 之后最重要的保险：14 个地面真值种子必须全部判为命中。
-        //    任何一个不过，都说明 RNG 流 / 池子顺序 / 前置消耗的推导有问题。
-        try { NeowPredict.SelfTest(problems); }
-        catch (Exception ex) { problems.Add("[自研] 自检抛异常: " + ex); }
-
-        try { EventPredict.SelfTest(problems); }
-        catch (Exception ex) { problems.Add("[事件] 自检抛异常: " + ex); }
-
-        if (problems.Count > 0)
-        {
-            SeedStore.Error("✗✗✗ 自检失败，为避免给出错误种子，搜索不会启动：");
-            foreach (var p in problems) SeedStore.Log("  - " + p);
-            return false;
-        }
-        SeedStore.Log("✓ 自检通过（种子哈希与游戏一致）");
-
-        // ---- 2. 第①级冒烟测试（问号数预筛，纯自研）----
+        // ---- 2. 第①级冒烟测试（骨骰判定，纯自研）----
         try
         {
             var smoke = SearchDriver.QuickSelfTest(0, 200_000);
@@ -144,7 +144,7 @@ public static class MainFile
             return false;
         }
 
-        // 第②级（骨骰判定）已经在 1.5 / 1.6 初始化并自检过了。
+        // 第②级（骨骰判定）已经在 1.5 / 1.7 初始化并自检过了。
         SeedStore.Log("✓✓ 全部就绪 —— 储备池不满时会自动补搜（不依赖任何第三方模组）");
         return true;
     }
