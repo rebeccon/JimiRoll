@@ -97,21 +97,32 @@ public static class MainFile
         SeedStore.Log("种子哈希: " + GameInterop.VerifyReport);
 
         // ---- 1.5 第②级预测器：主线程初始化（要访问 ModelDb）----
-        //  ★ 必须在主线程：NeowPredict 要读 ModelDb.CardPool<CurseCardPool>()。
+        //  ★ 必须在主线程：NeowPredict / EventPredict 都要读 ModelDb。
         //    本方法由 NMainMenu._Ready 的后置补丁调用，那正是主线程。
         var predictOk = NeowPredict.Initialize();
-        SeedStore.Log("自研判定状态: " + NeowPredict.Status);
+        SeedStore.Log("骨骰判定状态: " + NeowPredict.Status);
         if (!predictOk)
         {
-            SeedStore.Error("✗ 自研判定没初始化成功 —— 拒绝搜索（不给错种子）");
+            SeedStore.Error("✗ 骨骰判定没初始化成功 —— 拒绝搜索（不给错种子）");
+            return false;
+        }
+
+        var eventOk = EventPredict.Initialize();
+        SeedStore.Log("事件判定状态: " + EventPredict.Status);
+        if (!eventOk)
+        {
+            SeedStore.Error("✗ 事件判定没初始化成功 —— 拒绝搜索（不给错种子）");
             return false;
         }
 
         // ---- 1.6 自研预测器自检：用游戏内实测过的已知命中种子 ----
-        //  ★ 这一条是摘掉 RT2 之后最重要的保险：14 个地面真值种子必须全部判为命中。
+        //  ★ 这是摘掉 RT2 之后最重要的保险：14 个地面真值种子必须全部判为命中。
         //    任何一个不过，都说明 RNG 流 / 池子顺序 / 前置消耗的推导有问题。
         try { NeowPredict.SelfTest(problems); }
         catch (Exception ex) { problems.Add("[自研] 自检抛异常: " + ex); }
+
+        try { EventPredict.SelfTest(problems); }
+        catch (Exception ex) { problems.Add("[事件] 自检抛异常: " + ex); }
 
         if (problems.Count > 0)
         {
@@ -173,7 +184,7 @@ public static class MainFile
             {
                 _fullWarned = true;
                 SeedStore.Log($"储备池已满（{SeedStore.ReserveCount}/{Conditions.ReserveCapacity}）→ 不搜索，空闲待命。");
-                SeedStore.Log("  用掉一个（进「自定义开局」取走）之后，储备掉到 14，下次回主菜单会自动补上。");
+                SeedStore.Log($"  用掉一个（进「自定义开局」取走）之后，储备掉到 {Conditions.ReserveCapacity - 1}，下次回主菜单会自动补上。");
             }
             return;
         }

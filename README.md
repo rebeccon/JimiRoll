@@ -13,7 +13,8 @@
 | 开局 | 涅奥骨骰（`NeowsBones`） |
 | 骨骰给出的两个遗物 | 松动羊毛剪 `PrecariousShears` + 新叶 `NewLeaf` |
 | 最终诅咒 | 愧疚 `Guilty` |
-| 第一章问号房间 | ≥ 14 个 |
+| 第一章问号房间 | ≥ 14 个（最多） |
+| 第一个问号房间 | 必须是**事件**，且该事件为 **变形灵林谷**（MorphicGrove） |
 | 角色 / 难度 | 沉默猎手 / 进阶 10 |
 
 ---
@@ -137,7 +138,7 @@
 
 ```jsonc
 {
-  "ReserveCapacity": 15,          // 储备池容量（恒定维持这个数量）
+  "ReserveCapacity": 10,          // 储备池容量（恒定维持这个数量）
   "MinUnknownRooms": 14,          // 第一章问号房间门槛（只可能 10~14；14 就是"最多"）
   "RequireExactUnknownRooms": false,  // false = ≥，true = 必须恰好等于
   "CharacterKey": "CHARACTER:SILENT",

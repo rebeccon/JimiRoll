@@ -12,7 +12,7 @@ namespace JimiRoll;
 internal sealed class SettingsData
 {
     /// <summary>储备池容量 —— 存放的种子数量恒定维持在这个值。</summary>
-    public int ReserveCapacity { get; set; } = 15;
+    public int ReserveCapacity { get; set; } = 10;
 
     /// <summary>第一章问号房间的门槛。</summary>
     public int MinUnknownRooms { get; set; } = 14;
@@ -168,7 +168,7 @@ internal static class Settings
         var notes = new List<string>();
 
         if (d.ReserveCapacity < 1 || d.ReserveCapacity > 200)
-        { notes.Add($"ReserveCapacity={d.ReserveCapacity} → 15"); d.ReserveCapacity = 15; }
+        { notes.Add($"ReserveCapacity={d.ReserveCapacity} → 10"); d.ReserveCapacity = 10; }
 
         if (d.MinUnknownRooms < 10 || d.MinUnknownRooms > 14)
         { notes.Add($"MinUnknownRooms={d.MinUnknownRooms} → 14（游戏取值范围只可能是 10~14）"); d.MinUnknownRooms = 14; }

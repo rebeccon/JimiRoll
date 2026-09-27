@@ -263,18 +263,23 @@ internal static class SearchDriver
 
             // ---------- 第②级：自研判定骨骰条件（①是否给骨骰 ②遗物 ③诅咒）----------
             //  ★ 完全不用 RolltheSpire2。已与 RT2 在 10 万个种子上对拍，一致率 100.0000%。
-            if (NeowPredict.IsMatch(seed, out var evidence))
+            if (NeowPredict.IsMatch(seed, out var bonesEvidence))
             {
-                // ★ 双保险守卫：证据里必须真的出现「✓全中」才记录。
+                // ★ 双保险守卫：证据里必须真的出现「✓全中」才继续。
                 //   之前 LastEvidence 是共享静态字段，跨线程被覆盖，导致结果文件里
                 //   混进了一批「Evidence = Neow 未给骨骰」的假记录。
                 //   现在证据按线程传递，再加这道守卫，任何竞态都不可能污染结果。
-                if (evidence == null || !evidence.Contains("✓全中"))
+                if (bonesEvidence == null || !bonesEvidence.Contains("✓全中"))
                 {
-                    SeedStore.Log($"⚠ 判定命中但证据不一致，已丢弃: {seed}  证据={evidence}");
+                    SeedStore.Log($"⚠ 判定命中但证据不一致，已丢弃: {seed}  证据={bonesEvidence}");
                 }
-                else
+                // ---------- 第③级：第一个问号房间必须是事件，且该事件是变形灵林谷 ----------
+                //  ★ 放在最后：它比骨骰判定贵（要洗 31 张牌的队列），
+                //    而骨骰判定只有 ~10% 的种子能过，所以先过骨骰能省掉 90% 的③级开销。
+                else if (EventPredict.FirstRoomIsTargetEvent(seed, out var eventEvidence))
                 {
+                    var evidence = bonesEvidence + " ；" + eventEvidence;
+
                     var n = Interlocked.Increment(ref _matched);
                     var hit = new SeedHit
                     {

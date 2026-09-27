@@ -13,6 +13,96 @@
 
 ---
 
+## [2.1.0] - 2026-09-27
+
+### 新增条件：第一个问号房间必须是事件，且该事件为**变形灵林谷**（MorphicGrove）
+
+储备池容量同时从 15 调整为 **10**。
+
+#### 机制（全部逐条 IL 反汇编 + 真实存档实证）
+
+**① 事件不是进房随机抽的，而是每个 Act 开局预生成一个洗过的队列**
+
+```
+ActModel.GenerateRooms(rng, unlockState, isMultiplayer):
+    evts = AllEvents.Concat(ModelDb.AllSharedEvents)      // 顺序即洗牌输入顺序
+    _rooms.events.AddRange(UnstableShuffle(evts, rng))    // Fisher-Yates
+RoomSet.NextEvent = events[eventsVisited % Count]
+```
+
+⇒ **第一个事件 = 洗完队列的第一张。**
+
+**② 这条队列用的是 `RunRngSet.UpFront`，前置消耗 k = 2**
+
+```
+RunManager.GenerateRooms:
+    UnstableShuffle(SharedAncients.ToList(), UpFront)              // A-1 次
+    foreach (act in Acts.Skip(1)) UpFront.NextInt(ancients.Count+1) // Acts-1 次
+    for (i = 0; i < Acts.Count; i++) Acts[i].GenerateRooms(UpFront, ...)
+```
+
+实测 `SharedAncients = 1`（只有 Darv），存档里 `"acts": ["ACT.OVERGROWTH","ACT.HIVE","ACT.GLORY"]`
+⇒ **k = (1−1) + (3−1) = 2**。
+
+**③ 问号房间的类型是进房时掷骰决定的**
+
+```
+UnknownMapPointOdds 的赔率表：Monster 0.10 / Elite -1 / Treasure 0.02 / Shop 0.03，默认结果是 Event
+累计判定：roll ≤0.10→怪物 | ≤0.12→宝箱 | ≤0.15→商店 | 否则→事件
+⇒ P(事件) = 0.85
+```
+
+★ 保守且安全：即使 Shop 被黑名单屏蔽（`BuildRoomTypeBlacklist` 只在"该节点子节点全是商店"时屏蔽），
+累计只到 0.12，`roll > 0.15` 仍然落在默认值 Event。**用 0.15 判定在两种情况下都正确。**
+
+**④ Act 1 是哪一本 —— 这一步差点酿成"给出错种子"**
+
+`MorphicGrove` **只在 Overgrowth 里**，而 Act 1 是 `[Overgrowth, Underdocks]` 里**随机抽的**：
+
+```
+StartRunLobby.BeginRunLocally(seed, ...):
+    var rng = new Rng(GetDeterministicHashCode(seed), "act_selection");   // ★ 独立流，不消耗 UpFront
+    var acts = ActModel.GetRandomList(rng, unlockState, isMultiplayer);
+ActModel.GetRandomList: 没发现过的非默认 Act 优先，否则 rng.NextItem(unlocked)
+```
+
+**这是开发中真实踩到的坑**：第一版没考虑 Act 1，用户实测的一局
+（seed `00000046UCKY`）Act 1 就是 `Underdocks` —— 那种种子**永远不可能**出变形灵林谷。
+现已修好，并用**用户真实存档的三局**验证：
+
+```
+✓ 0000000BZAE2  预期=Overgrowth   实际=Overgrowth
+✓ 00000046UCKY  预期=Underdocks   实际=Underdocks
+✓ U4L48R8MJLU3  预期=Underdocks   实际=Underdocks
+```
+
+#### 验证
+
+| 验证 | 结果 |
+|---|---|
+| 事件池 vs 游戏自己的 `GenerateRooms`（用同一个 rng 洗一遍，逐项比对） | **完全一致** |
+| Act1 预测 vs **真实存档三局** | **3/3** |
+| 旧条件自检（13 个已知命中种子） | **13/13 仍然通过** |
+| 进游戏实测 | 命中 12 个 / 5.37 亿种子（1/4480 万）；补满 10 个用 **90 秒**；速度 ~6.0 M 种子/秒 |
+
+命中证据现在长这样：
+
+```
+★ 命中 #12: 000000JZDDFE（问号 14）骨骰给出[RELIC:PrecariousShears+RELIC:NewLeaf] + 诅咒=GUILTY  ✓全中 ；
+            Act1=Overgrowth；第一个问号房=事件（roll=0.4063）→ 第一个事件=MorphicGrove  ✓全中
+```
+
+#### 新增的开发工具（不随模组发布）
+
+- **`ModelDb` 可以离线初始化** —— 这打开了"离线跑游戏自己的模型逻辑"这条路：
+  `ModelDb.Init()` 会走 `ReflectionHelper.ModTypes`，那里第一句是
+  `if (ModManager.State == 0) throw`。绕过方法：把 `ModManager` 的私有静态
+  `<State>k__BackingField` 设为 `Initialized`，并把 `ReflectionHelper._modTypes` 填成空数组。
+- `_tools/QnProbe` 新增 `events`（打印各 Act 的事件池）/ `actcheck`（用真实存档验证 Act1）。
+- `QN_DOMAIN` 环境变量现在生效（可传 `World` / `All`）。
+
+---
+
 ## [2.0.1] - 2026-09-27
 
 ### 第一章问号门槛 12 → 14
