@@ -78,6 +78,12 @@ internal static class Conditions
     /// <summary>★ 储备池容量 —— 存放的种子数量恒定维持在这个值。</summary>
     public static int ReserveCapacity => Settings.Current.ReserveCapacity;
 
+    /// <summary>
+    /// 是否要求「第一个问号房间是事件，且该事件为变形灵林谷」。
+    /// ⚠️ 默认【关】—— 事件队列的预测还没验证通过（见 SettingsData.RequireFirstEvent）。
+    /// </summary>
+    public static bool RequireFirstEvent => Settings.Current.RequireFirstEvent;
+
     /// <summary>单次搜索的时间上限（分钟）—— 防内存持续上涨的安全网。</summary>
     public static int MaxRunMinutes => Settings.Current.MaxRunMinutes;
 

@@ -323,6 +323,28 @@ internal static class EventPredict
     // 判定
     // ==================================================================
 
+    /// <summary>
+    /// 供离线对拍：把判定过程的每一步都吐出来（Act1 是哪一本、掷骰值、我们预测的第一个事件）。
+    /// 返回 (Act1, roll, 预测的第一个事件名) —— roll &lt; 0 表示没走到那一步。
+    /// </summary>
+    public static (string Act1, float Roll, string FirstEvent) PredictFirstEventForTest(string seed)
+    {
+        if (!Ready) return (null, -1f, null);
+
+        var act1 = ResolveAct1(seed);
+        if (act1 != "Overgrowth") return (act1, -1f, null);
+
+        var oddsRng = new RunRngSet(seed).UnknownMapPoint;
+        var roll = oddsRng.NextFloat(1f);
+        if (roll <= EventRollThreshold) return (act1, roll, "(第一个问号房不是事件)");
+
+        var upFront = new RunRngSet(seed).UpFront;
+        for (var i = 0; i < UpFrontSkips; i++) upFront.NextInt(2);
+        var pool = new List<string>(_pool);
+        upFront.Shuffle(pool);
+        return (act1, roll, pool[0]);
+    }
+
     /// <summary>true = 第一个问号房间就是事件，且该事件是变形灵林谷。</summary>
     public static bool FirstRoomIsTargetEvent(string seed, out string evidence)
     {

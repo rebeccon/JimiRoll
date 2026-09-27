@@ -6,10 +6,38 @@
 
 ## [未发布]
 
-### 计划中
-- P6：发布前验证清单 + GitHub
+### 🚧 「第一个事件」条件**已实现但默认关闭**（2026-09-27）
 
-详见 `docs/正式化方案.md`。
+条件「第一个问号房间是事件，且该事件为变形灵林谷」**代码写好了，但预测还没验证通过**，
+**默认关闭**（`settings.json` 的 `RequireFirstEvent = false`）。开启它会给出**错误的种子**。
+
+**已独立验证通过的部分：**
+- ✅ 事件池 = 31 个，与游戏自己的 `GenerateRooms` 逐项比对**完全一致**
+- ✅ 问号房间类型的掷骰（赔率 Monster .10 / Treasure .02 / Shop .03，默认 Event）——
+  真实存档样本 `PBMP7ETLAR0F`：第 1 个问号房我们算 roll=0.1176 ≤0.15「不是事件」，
+  实际那一格确实没出事件（玩家在第 2 个问号房才遇到事件）—— **对上了**
+- ✅ **Act 1 预测**（`GetRandomList` + `act_selection` 独立流）—— 真实存档 **3/3**
+
+**❌ 还没解开的：** 「第一个事件是队列里的哪一张」。
+用真实存档里 4 个 Act1=Overgrowth 且第一个事件房就是第一个问号房的样本验证，**0/4**：
+```
+seed 00000009DF8P  实际=ThisOrThat            我们预测=SunkenStatue
+seed 00000001J8RG  实际=JungleMazeAdventure   我们预测=WhisperingHollow
+seed 00000000Q6L2  实际=TheFutureOfPotions    我们预测=TeaMaster
+seed PBMP7ETLAR0F  实际=SapphireSeed          我们预测=(第一个问号房不是事件)
+```
+已经排除的假设（大搜索 12 条 `RunRngType` 流 × k(0..300) × 列表内偏移(0..5) ×
+24 种池子顺序/epoch 组合，用**游戏自己的 `UnstableShuffle`**）—— **全部对不上**。
+
+⇒ 问题不在「流 / k / 池子顺序 / epoch 过滤」。最可疑的是
+`EnsureNextEventIsValid` 会跳过 `!IsAllowed(runState) || 已访问` 的事件
+（`MorphicGrove.IsAllowed` 要求 `Gold >= 100` 且牌组满足条件），
+或者 `MarkVisited(Event)` 会推进 `eventsVisited` —— 这条链还没理顺。
+
+**地面真值的来源（重要）**：游戏存档 `saves/history/*.run` 是 **JSON**，里面有
+`seed` / `acts` / `map_point_history[*].player_stats[*].event_choices.title.key`，
+**记录了每一格实际发生的事件**。这是比任何对拍都硬的真值，`_tools/QnProbe` 的
+`actcheck` / `eventcheck` / `eventk` 就是基于它。
 
 ---
 
@@ -17,7 +45,7 @@
 
 ### 新增条件：第一个问号房间必须是事件，且该事件为**变形灵林谷**（MorphicGrove）
 
-储备池容量同时从 15 调整为 **10**。
+> ⚠️ **该条件默认关闭**，原因见上面「未发布」一节。储备池容量已从 15 调整为 **10**。
 
 #### 机制（全部逐条 IL 反汇编 + 真实存档实证）
 

@@ -54,6 +54,17 @@ internal sealed class SettingsData
     /// </summary>
     public bool ShowStatusPanel { get; set; } = true;
 
+    /// <summary>
+    /// 是否启用「第一个问号房间必须是事件且为变形灵林谷」这条条件。
+    ///
+    /// ⚠️ <b>默认关闭，而且目前不该打开</b> ——
+    /// 2026-09-27 用真实存档的 4 个 Overgrowth 样本验证，事件队列的预测 <b>0/4</b>：
+    /// 房间类型掷骰、Act1 判断、事件池都已经验证过是对的，
+    /// 但「第一个事件是队列里的哪一张」这一环还没解开（详见 docs/去RT2化方案.md）。
+    /// 因为错的判定会给出<b>错误的种子</b>，所以默认关掉，等解开再开。
+    /// </summary>
+    public bool RequireFirstEvent { get; set; } = false;
+
     /// <summary>状态面板的字号。</summary>
     public int PanelFontSize { get; set; } = 10;
 }

@@ -273,12 +273,25 @@ internal static class SearchDriver
                 {
                     SeedStore.Log($"⚠ 判定命中但证据不一致，已丢弃: {seed}  证据={bonesEvidence}");
                 }
-                // ---------- 第③级：第一个问号房间必须是事件，且该事件是变形灵林谷 ----------
-                //  ★ 放在最后：它比骨骰判定贵（要洗 31 张牌的队列），
-                //    而骨骰判定只有 ~10% 的种子能过，所以先过骨骰能省掉 90% 的③级开销。
-                else if (EventPredict.FirstRoomIsTargetEvent(seed, out var eventEvidence))
+                // ---------- 第③级（可选）：第一个问号房间必须是事件，且该事件是变形灵林谷 ----------
+                //  ★ 默认【关闭】—— 事件队列的预测还没验证通过（真实存档 0/4）。
+                //    开启它会给出错误的种子，所以要显式打开才生效。
+                else
                 {
-                    var evidence = bonesEvidence + " ；" + eventEvidence;
+                    // ⚠️ 事件条件默认关闭（预测未验证通过，真实存档 0/4）。
+                    //    关闭时这里恒为 true，等于不做这条筛选。
+                    string eventEvidence = "";
+                    var eventOk = !Conditions.RequireFirstEvent
+                                  || EventPredict.FirstRoomIsTargetEvent(seed, out eventEvidence);
+                    if (!eventOk)
+                    {
+                        // 不满足事件条件 —— 正常淘汰，不打日志（太吵）
+                    }
+                    else
+                    {
+                    var evidence = Conditions.RequireFirstEvent
+                        ? bonesEvidence + " ；" + eventEvidence
+                        : bonesEvidence;
 
                     var n = Interlocked.Increment(ref _matched);
                     var hit = new SeedHit
@@ -292,6 +305,7 @@ internal static class SearchDriver
                     SeedStore.AddHit(hit);
                     SeedStore.Log($"★ 命中 #{n}: {seed}（问号 {qn}）{evidence}");
                     try { onMatch?.Invoke(seed); } catch { }
+                    }
                 }
             }
 
