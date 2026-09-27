@@ -4,6 +4,42 @@
 
 ---
 
+## [2.2.1] — 2026-09-27
+
+### 📦 打包修正：zip 现在自带 `JimiRoll\` 一层目录，真正「解压即用」
+
+**问题**：2.2.0 的 `dist\JimiRoll-2.2.0.zip` 是**平铺**的（压缩包根目录直接是
+`JimiRoll.dll` / `JimiRoll.json` / `docs\` …）。用户按说明"解压到 `mods\`"之后，
+文件会散落在 `mods\` 根目录，必须自己新建一个 `JimiRoll` 文件夹再拖进去。
+
+**原因**：`build.ps1` 用 `Compress-Archive -Path $stage\*` 打包，只把**内容**压进去了。
+
+**修复**：暂存目录改名为纯粹的 `JimiRoll`（去掉版本号后缀），并用
+`Compress-Archive -Path $stage` 打包**文件夹本身** ⇒ zip 里多一层 `JimiRoll\`：
+
+```
+之前： JimiRoll-2.2.0.zip → JimiRoll.dll, JimiRoll.json, docs\, ...
+现在： JimiRoll-2.2.1.zip → JimiRoll\JimiRoll.dll, JimiRoll\JimiRoll.json, JimiRoll\docs\, ...
+```
+
+于是 `把 zip 解压到 mods\` 就直接得到正确的 `mods\JimiRoll\...`。
+
+> 💡 游戏对清单的搜索是**递归**的，所以平铺其实也能被加载 —— 但那会把 12 个文件
+> 散在 `mods\` 根目录，还可能和 `mods\JimiRoll\` 同时存在而刷
+> `Tried to load mod with id JimiRoll, but a mod is already loaded` 的错误。
+> 现在这个结构才是干净的。
+
+### 📝 其它
+
+- README 新增「下载」章节（创意工坊订阅链接 / GitHub 附件直链 / 手动安装步骤），
+  并提醒别把 `Source code (zip)` 当成模组下载
+- README 的手动安装步骤简化：解压到 `mods\` 即可，不用再手动建文件夹
+- `build.ps1 -Deploy` 的复制加上 `-Recurse`，确保 `docs\` 子目录完整
+
+> 功能与行为**没有任何改动**，与 2.2.0 完全一致，仅打包结构与文档变化。
+
+---
+
 ## [2.2.0] — 2026-09-27
 
 ### ✅ 发布前验收（P6）全部通过

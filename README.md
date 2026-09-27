@@ -11,7 +11,7 @@
 | 渠道 | 链接 | 说明 |
 |---|---|---|
 | **Steam 创意工坊**（推荐） | **[工坊页面 → 订阅](https://steamcommunity.com/sharedfiles/filedetails/?id=3808993605)** | 订阅即自动安装 / 自动更新，最省事 |
-| **GitHub 附件**（手动安装） | **[⬇ JimiRoll-2.2.0.zip](https://github.com/rebeccon/JimiRoll/releases/download/v2.2.0/JimiRoll-2.2.0.zip)**（94 KB） | 解压后见下面的安装步骤 |
+| **GitHub 附件**（手动安装） | **[⬇ JimiRoll-2.2.1.zip](https://github.com/rebeccon/JimiRoll/releases/latest)**（95 KB） | 解压后见下面的安装步骤 |
 | 历史版本 | [Releases](https://github.com/rebeccon/JimiRoll/releases) | 每个版本一个 tag |
 
 > ⚠️ **别下错文件**：在 Release 页面里请认准附件 **`JimiRoll-x.y.z.zip`**。
@@ -20,10 +20,9 @@
 ### 手动安装（用 GitHub 附件的情况）
 
 1. 下载 `JimiRoll-x.y.z.zip` 并解压
-2. 在 `Slay the Spire 2\mods\` 下**新建一个文件夹，命名为 `JimiRoll`**
-3. 把解压出来的所有文件（`JimiRoll.dll` / `JimiRoll.json` / `README.md` / `docs\` …）**放进那个文件夹**
+2. 把解压出来的 **`JimiRoll` 文件夹**整个丢进 `Slay the Spire 2\mods\`
 
-最终应该长这样：
+就这两步。最终应该长这样：
 
 ```
 Slay the Spire 2\mods\JimiRoll\JimiRoll.json      ← 清单必须和 dll 在同一个文件夹里

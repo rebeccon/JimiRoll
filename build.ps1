@@ -47,7 +47,12 @@ $dll = Join-Path $binDir "$modId.dll"
 if (-not (Test-Path $dll)) { throw "compiled dll not found: $dll" }
 
 # ---- stage ----
-$stage = Join-Path $outDir "$modId-$version"
+# NOTE: the staging folder is named exactly "<modId>" (no version suffix) on purpose,
+# so that the produced zip contains a TOP-LEVEL "JimiRoll\" folder. Then users can
+# simply extract the zip into the game's mods\ directory and the layout is already
+# correct (mods\JimiRoll\JimiRoll.json). v2.2.1 fixed this -- before, the zip was
+# flat and users had to create the folder by hand.
+$stage = Join-Path $outDir $modId
 if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
@@ -69,9 +74,10 @@ $docs = Join-Path $root 'docs'
 if (Test-Path $docs) { Copy-Item $docs (Join-Path $stage 'docs') -Recurse -Force }
 
 # ---- zip ----
+# -Path $stage (the folder itself, not $stage\*) => the zip root is "JimiRoll\".
 $zip = Join-Path $outDir "$modId-$version.zip"
 if (Test-Path $zip) { Remove-Item $zip -Force }
-Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip
+Compress-Archive -Path $stage -DestinationPath $zip
 
 Write-Host ''
 Write-Host "[build] packaged: $zip" -ForegroundColor Green
@@ -83,6 +89,6 @@ if ($Deploy) {
     $gameDir = if ($env:STS2_GAME_DIR) { $env:STS2_GAME_DIR } else { 'D:\steam\steamapps\common\Slay the Spire 2' }
     $modsDir = Join-Path $gameDir "mods\$modId"
     New-Item -ItemType Directory -Force -Path $modsDir | Out-Null
-    Copy-Item (Join-Path $stage '*') $modsDir -Force
+    Copy-Item (Join-Path $stage '*') $modsDir -Recurse -Force
     Write-Host "[build] deployed to $modsDir" -ForegroundColor Green
 }
