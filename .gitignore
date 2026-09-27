@@ -16,3 +16,7 @@ mods/
 seeds_found.json
 seeds_used.json
 cursor.json
+
+# ---- 误放进仓库的截图 ----
+屏幕截图*.png
+Screenshot*.png
