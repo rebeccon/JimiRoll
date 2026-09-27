@@ -1,0 +1,4 @@
+{
+  "_comment": "更新已有工坊条目时用这份（复制成 workshop.json 再上传）。只保留 changeNote —— 其余字段省略 = 保持工坊上的现有内容不变（官方上传器语义）。记得改 changeNote。",
+  "changeNote": "v2.2.1：本次改了什么，写在这里。"
+}
