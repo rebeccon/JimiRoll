@@ -1,8 +1,8 @@
 {
-  "title": "基米roll种器 JimiRoll",
-  "description": "固定开局条件 + 自动筛种，装好即自动运行。\n\n【它筛什么】\n• 涅奥骨骰开局\n• 骨骰给的两个遗物 = 松动羊毛剪 + 新叶\n• 最终诅咒 = 愧疚\n• 第一章【出怪房间占比】≤ 30%（越低越好；全服平均约 43%）\n• 角色/难度：沉默猎手 A10\n\n【怎么用】\n1. 订阅后进游戏，mod 列表里启用「基米roll种器」\n2. 回一次主菜单 —— 它就开始筛了（储备 10 个，约 1 分钟）\n3. 进「自定义开局」，种子框里已经自动填好了\n\n【说明】\n• 不依赖任何其它模组\n• 储备池满了就空闲待命，用掉一个自动补一个\n• 游戏版本要求 ≥ 0.111.0\n• 请保持 WorkerCount 为默认值 1，不要开多线程\n\n源码与更新日志：https://github.com/rebeccon/JimiRoll",
+  "title": "基米roll种器 JimiRoll · 自动筛种",
+  "description": "[b]基米roll种器 JimiRoll[/b] —— 杀戮尖塔 2 的自动筛种工具。\n\n按固定条件在后台自动搜索种子，储备好 10 个；进「自定义开局」时自动把队首种子填进输入框。装好即用，不需要任何操作，也不依赖其它模组。\n\n[b]【它筛什么】[/b]\n[list]\n[*]涅奥骨骰开局\n[*]骨骰给的两个遗物 = [b]松动羊毛剪[/b] + [b]新叶[/b]\n[*]最终诅咒 = [b]愧疚[/b]\n[*]第一章 [b]出怪房间占比 ≤ 30%[/b]（越低越好；全服平均约 43%）\n[*]角色 / 难度：沉默猎手，进阶 10\n[/list]\n\n[b]【怎么用】[/b]\n[list]\n[*]订阅后进游戏，在 mod 列表里启用「基米roll种器」\n[*]回一次主菜单 —— 它就开始筛了（凑满储备约 1 分钟）\n[*]进「自定义开局」，种子框里已经自动填好了\n[/list]\n之后什么都不用管：储备满了它就空闲待命，你用掉一个它自动补一个。\n\n[b]【说明】[/b]\n[list]\n[*][b]不依赖任何其它模组[/b]\n[*][b]不修改游戏规则、不影响存档[/b]（affects_gameplay = false）\n[*]平时几乎不占 CPU：储备满了就停工，只有缺种子时才跑一小会儿\n[*]游戏版本要求 ≥ 0.111.0\n[*]想调门槛：%APPDATA%\\SlayTheSpire2\\JimiRoll\\settings.json 里的 MaxMonsterPercent（默认 30，越小越难找）\n[*]想临时停手：在同一个目录里建一个空文件 DISABLE_SEARCH.txt\n[/list]\n\n[b]【反馈】[/b]\n遇到 bug 或想提建议：[url=https://github.com/rebeccon/JimiRoll/issues]GitHub Issues[/url]\n源码与更新日志：[url=https://github.com/rebeccon/JimiRoll]github.com/rebeccon/JimiRoll[/url]\n\n[hr]\n[b]English[/b]\nAn automatic seed searcher for Slay the Spire 2. It searches seeds in the background that satisfy fixed conditions — Neow's Bones start, the two relics Precarious Shears + New Leaf, the curse Guilty, and an Act 1 with as few monster rooms as possible — keeps a reserve of 10 seeds, and fills the seed box automatically when you open Custom Run. No other mods required. (In-game text is Chinese.)",
   "visibility": "private",
-  "tags": ["Tools & APIs", "schinese"],
-  "changeNote": "首发版本 2.2.0：筛选指标改为「第一章出怪房间占比最低」。",
+  "tags": ["QoL", "Utility"],
+  "changeNote": "首发版本 2.2.0：筛选指标为「第一章出怪房间占比最低」。",
   "contentDescriptors": []
 }
