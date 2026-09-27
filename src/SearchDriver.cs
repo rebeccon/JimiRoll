@@ -121,11 +121,11 @@ internal static class SearchDriver
         SeedStore.Log("哈希: " + GameInterop.VerifyReport);
         SeedStore.Log($"起点 ordinal = {learned.NextOrdinal}");
 
-        // ★ 0 = 自动。现在瓶颈是纯 CPU 的地图生成（~55ms/张、无共享锁），
-        //    所以多线程是线性收益；留 1 个核给游戏本身。
+        // ★ 0 = 自动（= 1）。⚠️ 实测多线程会让游戏无征兆退出（见 SettingsData.WorkerCount），
+        //    所以自动值就是 1；用户非要多开才走配置值。
         var workers = Conditions.WorkerCount > 0
-            ? Conditions.WorkerCount
-            : Math.Clamp(Environment.ProcessorCount - 1, 1, 8);
+            ? Math.Clamp(Conditions.WorkerCount, 1, 8)
+            : 1;
         SeedStore.Log($"线程数 = {workers}（逻辑核 {Environment.ProcessorCount}）");
         SeedStore.Log($"目标: 把储备池补到 {Conditions.ReserveCapacity} 个（当前 {SeedStore.ReserveCount} 个）就停手；" +
                       $"单次最多跑 {Conditions.MaxRunMinutes} 分钟（防内存持续上涨）");

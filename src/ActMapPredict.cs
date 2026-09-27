@@ -213,4 +213,34 @@ internal static class ActMapPredict
             SeedStore.Warn($"[地图] 给 {hit.Seed} 补统计失败: {ex.Message}");
         }
     }
+
+    /// <summary>
+    /// ★ 用当前线程重算统计并覆盖旧值。返回 false = 这颗种子的地图**抖动**，不可信，应丢弃。
+    ///
+    /// 启动时（主线程）对储备池里的每一项跑一遍：这样排序用的值就是"主线程口径"的，
+    /// 交付时复核也几乎必然一致。快照里被下游当成"稳"的种子，这里一律重新判定。
+    /// </summary>
+    public static bool RefreshStats(SeedHit hit)
+    {
+        if (hit == null || string.IsNullOrWhiteSpace(hit.Seed)) return false;
+        try
+        {
+            var (m1, t1, r1) = CountRooms(hit.Seed);
+            var (m2, t2, _) = CountRooms(hit.Seed);
+            if (m1 != m2 || t1 != t2 || t1 <= 0)
+            {
+                SeedStore.Log($"[地图] {hit.Seed} 复核抖动（{m1}/{t1} vs {m2}/{t2}）→ 丢弃");
+                return false;
+            }
+            hit.Act1Monsters = m1;
+            hit.Act1Total = t1;
+            hit.Act1MonsterPercent = Math.Round(r1 * 100.0, 2);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            SeedStore.Warn($"[地图] 给 {hit.Seed} 复核统计失败: {ex.Message}");
+            return false;
+        }
+    }
 }

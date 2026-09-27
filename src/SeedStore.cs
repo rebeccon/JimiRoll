@@ -252,23 +252,46 @@ internal static class SeedStore
     {
         lock (FileGate)
         {
-            // ---- 每个储备项按新粒度补全统计 ----
-            foreach (var h in ReserveLocked())
-                ActMapPredict.FillStats(h);
+            // ---- ★ 每个储备项都在【当前线程】重算统计（并做抖动判定）----
+            //  调用方是主线程的初始化流程，所以这里算出来的就是"主线程口径"，
+            //  排序和交付复核都以此为准；抖动的种子直接剔除。
+            var dropped = new List<SeedHit>();
+            foreach (var h in ReserveLocked().ToList())
+            {
+                if (h == null || string.IsNullOrWhiteSpace(h.Seed)) { dropped.Add(h); continue; }
+                if (!ActMapPredict.RefreshStats(h)) { dropped.Add(h); continue; }
+
+                // ★ 主线程口径下不达标的，也别留在储备池里占位置
+                //   （搜索线程算出来的值有一半左右会比主线程口径乐观，所以这里必须重判）
+                if (!Conditions.MonsterRatioPass(h.Act1MonsterPercent / 100.0))
+                {
+                    SeedStore.Log($"[储备池] 剔除 {h.Seed}：主线程口径 {h.Act1Monsters}/{h.Act1Total} = " +
+                                  $"{h.Act1MonsterPercent:F1}% 超过 {Conditions.MaxMonsterRatio * 100:F0}%");
+                    dropped.Add(h);
+                }
+            }
+            // ★ 必须先真正从储备池里摘掉，否则下面的 LoadHits() 会把它们又捞回来
+            //   （LoadHits 只按字段过滤，不看 dropped 名单 —— 这个坑踩过一次）。
+            if (dropped.Count > 0)
+            {
+                var dropSet = new HashSet<SeedHit>(dropped, (IEqualityComparer<SeedHit>)null);
+                ReserveLocked().RemoveAll(h => dropSet.Contains(h));
+            }
+
+            foreach (var h in dropped)
+                ArchiveLocked().Add(new ArchiveEntry
+                {
+                    Seed = h?.Seed ?? "", Ordinal = h?.Ordinal ?? 0,
+                    Act1Monsters = h?.Act1Monsters ?? 0,
+                    Act1Total = h?.Act1Total ?? 0,
+                    Act1MonsterPercent = h?.Act1MonsterPercent ?? 0,
+                    Reason = h is { Act1Total: > 0 } ? "reject" : "stale",
+                    AtUtc = DateTime.UtcNow.ToString("O"),
+                });
 
             var ordered = LoadHits();
             var reserve = ReserveLocked();
             var cap = Conditions.ReserveCapacity;
-
-            // ---- 先剔掉旧判定口径的残留（缺失章节统计，无法比较占比）----
-            var allReserve = ReserveLocked().Where(h => h != null && !string.IsNullOrWhiteSpace(h.Seed)).ToList();
-            var dropped = allReserve.Where(h => !h.IsCurrentSchema).ToList();
-            foreach (var h in dropped)
-                ArchiveLocked().Add(new ArchiveEntry
-                {
-                    Seed = h.Seed, Ordinal = h.Ordinal,
-                    Reason = "stale", AtUtc = DateTime.UtcNow.ToString("O"),
-                });
 
             // ---- 再去重（保留优先级最高的那个）----
             var distinct = new List<SeedHit>();

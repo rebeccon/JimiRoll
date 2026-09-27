@@ -43,13 +43,15 @@ internal sealed class SettingsData
     public int MaxRunMinutes { get; set; } = 3;
 
     /// <summary>
-    /// 搜索线程数。<b>0 = 自动</b>（<c>min(逻辑核数 - 1, 8)</c>），推荐就用 0。
+    /// 搜索线程数。<b>默认 1（单线程），别乱调。</b>
     ///
-    /// v2.0 时默认 1 是因为瓶颈在 RT2 的串行 Predict；现在瓶颈是
-    /// <b>Act1 地图生成（~55ms/张，纯 CPU、无共享锁）</b>，多线程能线性提速，所以该多开。
-    /// 搜索只在储备池不满时跑，凑满就空闲，不会一直占着 CPU。
+    /// ⚠️ 2026-09-27 实测：把线程数提到 8 之后，游戏在一次搜索里**无声无息地退出了**
+    /// （godot.log 里既没有异常也没有退出日志，两次多线程运行都如此；单线程运行则稳定）。
+    /// 怀疑是游戏的地图生成里有**进程级共享的静态缓存**，被并发调用搞坏。
+    /// 所以默认单线程 —— 反正单线程也够用（约 14 张地图/秒，储备 10 个约 30~60 秒凑齐）。
+    /// 0 = 自动（目前等同于 1）。
     /// </summary>
-    public int WorkerCount { get; set; } = 0;
+    public int WorkerCount { get; set; } = 1;
 
     /// <summary>
     /// 日志级别：<c>Debug</c> / <c>Info</c> / <c>Warn</c> / <c>Error</c> / <c>Off</c>。
