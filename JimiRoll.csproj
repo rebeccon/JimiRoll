@@ -29,6 +29,15 @@
     <GameDir Condition="'$(GameDir)' == ''">D:\steam\steamapps\common\Slay the Spire 2</GameDir>
     <GameDataDir>$(GameDir)\data_sts2_windows_x86_64</GameDataDir>
     <ModsDir>$(GameDir)\mods\JimiRoll</ModsDir>
+
+    <!--
+      ★ 发布卫生：默认编译会把**本机源码绝对路径**写进 dll/pdb 的调试信息里
+        （实测 dll 里能搜到 "C:\Users\<用户名>\Desktop\..."）。
+        这里把仓库根目录映射成一个中性前缀，发布出去就看不到本机路径了。
+    -->
+    <PathMap>$(MSBuildProjectDirectory)=/JimiRoll</PathMap>
+    <Deterministic>true</Deterministic>
+    <DebugType>portable</DebugType>
   </PropertyGroup>
 
   <!-- 直接 HintPath 引用，不走 NuGet（沙箱无外网） -->
@@ -61,10 +70,16 @@
       <_Extra Include="$(MSBuildProjectDirectory)\README.md" Condition="Exists('$(MSBuildProjectDirectory)\README.md')" />
       <_Extra Include="$(MSBuildProjectDirectory)\LICENSE" Condition="Exists('$(MSBuildProjectDirectory)\LICENSE')" />
     </ItemGroup>
+    <ItemGroup>
+      <_Docs Include="$(MSBuildProjectDirectory)\docs\**\*.*" />
+    </ItemGroup>
     <MakeDir Directories="$(ModsDir)" />
     <Copy SourceFiles="@(_OutFiles)" DestinationFolder="$(ModsDir)" ContinueOnError="true" />
     <Copy SourceFiles="@(_Manifest)" DestinationFolder="$(ModsDir)" ContinueOnError="true" />
     <Copy SourceFiles="@(_Extra)" DestinationFolder="$(ModsDir)" ContinueOnError="true" />
+    <Copy SourceFiles="@(_Docs)"
+          DestinationFiles="@(_Docs->'$(ModsDir)\docs\%(RecursiveDir)%(Filename)%(Extension)')"
+          ContinueOnError="true" />
     <Message Importance="high" Text="[JimiRoll] 已部署到 $(ModsDir)" />
   </Target>
 

@@ -343,7 +343,19 @@ var map = new StandardActMap(rng, ModelDb.Act<Overgrowth>(),
 **结果：42 个样本命中 28 个（67%），失败的每一条都只差 1~2 位（共 15~17 位）。**
 ⇒ 地图的**形状（格子+连线）100% 正确**，只有个别格子的 `PointType` 不同。
 
-### ★ 根因：游戏的地图生成**不是完全可复现的**
+### ★★ 根因（P6 验收后订正）：**是"装了别的模组"**
+
+2026-09-27 的 P6 干净环境验收给出了决定性证据：
+**只启用 JimiRoll 时，游戏内算出的地图统计与离线复算 4/4 完全一致**
+（`000000N4QW0D` 12/44、`000000N5YC0H` 13/44、`000000N6R9X4` 20/56、`000000N8LYH1` 14/46，全等）；
+而在加载了 RitsuLib / UnlockTheSpire / Exusiai 的环境里同一颗种子会出现偏差
+（`000000N6R9X4` 进程内曾算出 16/54）。
+
+⇒ **偏差主要来自"其它模组在运行期改动了 act 内容"**（RitsuLib 的
+`Dynamic act content patching initialized for 5 act type(s)` 属于这类行为），
+而不是纯随机的哈希抖动。下面那条哈希机制是**候选解释之一**，保留备查。
+
+### ★ 根因（候选机制）：游戏的地图生成可能不是完全可复现的
 
 - `MapPoint` 重写了 `Equals(MapPoint)` 却**没有重写 `GetHashCode`**（探针 `dump` 已确认），
   而地图生成/裁剪里大量使用 `HashSet<MapPoint>`（`Children`、`parents`、`startMapPoints`…）。

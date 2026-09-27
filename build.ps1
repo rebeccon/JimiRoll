@@ -64,6 +64,10 @@ foreach ($extra in @('Pause.cmd', 'README.md', 'LICENSE', 'CHANGELOG.md')) {
     if (Test-Path $p) { Copy-Item $p $stage }
 }
 
+# docs\ (design notes + the pre-release acceptance checklist)
+$docs = Join-Path $root 'docs'
+if (Test-Path $docs) { Copy-Item $docs (Join-Path $stage 'docs') -Recurse -Force }
+
 # ---- zip ----
 $zip = Join-Path $outDir "$modId-$version.zip"
 if (Test-Path $zip) { Remove-Item $zip -Force }
